@@ -1,0 +1,87 @@
+# MaiBot BiliLife 0.2.5 · 不包含账号凭据或模型密钥
+# 可在对应模块的 TOML 编辑器保存，或修改服务器 settings.toml 后重载插件。
+
+# 每日安排
+[schedule]
+planner_enabled = true
+timezone = "Asia/Shanghai"
+plan_time = "09:00"
+active_start = "09:00"
+active_end = "22:30"
+task_timeout_seconds = 300
+max_retries = 2
+concurrency = 1
+
+# 浏览与理解
+[browse]
+browsing_enabled = true
+max_videos = 4
+max_video_seconds = 900
+max_browse_seconds = 2400
+allowed_topics = ["科学", "技术", "日常生活"]
+excluded_topics = []
+allowed_uploaders = []
+allowed_videos = []
+enable_frames = true
+max_frames = 3
+enable_asr = false
+enable_audio_model = false
+enable_video_model = false
+segment_seconds = 90
+max_download_mb = 40
+daily_download_mb = 120
+
+# 视频评论
+[comments]
+comments_enabled = true
+auto_publish_comments = false
+max_comments = 1
+max_per_video = 1
+cooldown_seconds = 3600
+
+# 回复跟进
+[replies]
+replies_enabled = true
+auto_publish_replies = false
+max_replies = 2
+max_thread_rounds = 2
+user_cooldown_seconds = 21600
+reply_interval_seconds = 3600
+
+# 经历与记忆
+[memory]
+memory_enabled = true
+recall_limit = 4
+recall_chars = 2400
+
+# 兴趣与人格干预
+[persona]
+evolution_enabled = true
+persona_guidance = ""
+expression_preferences = []
+
+# 每日复盘
+[review]
+review_enabled = true
+review_time = "22:00"
+summary_stream_id = ""
+
+# 模型与调用预算
+[models]
+max_model_calls = 24
+max_tokens = 70000
+output_tokens = 1600
+model_timeout_seconds = 100
+text_model_task = "utils"
+vision_model_task = "vlm"
+asr_model_task = "voice"
+
+# 存储与运行维护
+[resources]
+max_storage_mb = 256
+retention_days = 60
+cache_hours = 12
+
+# 运行提示词
+[prompts]
+prompt_overrides = {  }

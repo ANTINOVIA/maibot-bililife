@@ -1,0 +1,7 @@
+maibot-plugin-sdk==2.16.0
+bilibili-api-python==17.4.2
+httpx==0.28.1
+pydantic==2.14.1
+qrcode==8.2
+Pillow>=10
+aiohttp>=3.10,<4

@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS task_tombstones(task_id TEXT PRIMARY KEY, reason TEXT NOT NULL, created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS schedule_edits(id TEXT PRIMARY KEY, day TEXT NOT NULL, action TEXT NOT NULL, task_id TEXT, data TEXT NOT NULL, reason TEXT NOT NULL, created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS persona_interventions(id TEXT PRIMARY KEY, old_value TEXT NOT NULL, new_value TEXT NOT NULL, reason TEXT NOT NULL, rolled_back INTEGER NOT NULL DEFAULT 0, created REAL NOT NULL);

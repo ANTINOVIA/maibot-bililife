@@ -1,0 +1,2682 @@
+{
+  "schema_version": 2,
+  "workspace_title": "BiliLife",
+  "required_capabilities": [
+    "custom_pages"
+  ],
+  "pages": [
+    {
+      "id": "overview",
+      "title": "总览",
+      "icon": "chart",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "schedule",
+      "title": "每日安排",
+      "icon": "chart",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "browse",
+      "title": "浏览与理解",
+      "icon": "list",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "interactions",
+      "title": "评论与回复",
+      "icon": "list",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "memories",
+      "title": "经历记忆",
+      "icon": "database",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "interests",
+      "title": "兴趣与人格",
+      "icon": "chart",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "settings",
+      "title": "设置总览",
+      "icon": "settings",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "providers",
+      "title": "模型",
+      "icon": "settings",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "logs",
+      "title": "运行记录",
+      "icon": "list",
+      "placement": "workspace",
+      "mode": "custom",
+      "entry": "webui/index.html",
+      "layout": "document",
+      "queries": {
+        "snapshot": {
+          "api": "snapshot",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "page": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        },
+        "detail": {
+          "api": "detail",
+          "parameters": {
+            "section": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          }
+        },
+        "memory_search": {
+          "api": "memory_search",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
+        "qr": {
+          "api": "qr"
+        },
+        "export_logs": {
+          "api": "export_logs"
+        },
+        "model_providers": {
+          "api": "model_providers"
+        },
+        "settings_toml": {
+          "api": "settings_toml",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            }
+          }
+        }
+      },
+      "actions": {
+        "control": {
+          "api": "control",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "enqueue": {
+          "api": "enqueue",
+          "parameters": {
+            "kind": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": false,
+              "max_length": 12000
+            }
+          }
+        },
+        "task_action": {
+          "api": "task_action",
+          "parameters": {
+            "task_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "save_settings": {
+          "api": "save_settings",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "settings_patch": {
+          "api": "settings_patch",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 20000
+            }
+          }
+        },
+        "schedule_change": {
+          "api": "schedule_change",
+          "parameters": {
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 12000
+            }
+          }
+        },
+        "interest_save": {
+          "api": "interest_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "settings_toml_save": {
+          "api": "settings_toml_save",
+          "parameters": {
+            "module": {
+              "type": "string",
+              "required": false,
+              "max_length": 40
+            },
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 40000
+            }
+          }
+        },
+        "draft_save": {
+          "api": "draft_save",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "manual_draft": {
+          "api": "manual_draft",
+          "parameters": {
+            "video_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": true,
+              "max_length": 350
+            }
+          }
+        },
+        "publish": {
+          "api": "publish",
+          "parameters": {
+            "draft_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            }
+          },
+          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+        },
+        "memory_edit": {
+          "api": "memory_edit",
+          "parameters": {
+            "memory_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "text": {
+              "type": "string",
+              "required": false,
+              "max_length": 1200
+            },
+            "action": {
+              "type": "string",
+              "required": false,
+              "max_length": 30
+            }
+          },
+          "confirmation": "确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。"
+        },
+        "interest_action": {
+          "api": "interest_action",
+          "parameters": {
+            "record_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "action": {
+              "type": "string",
+              "required": true,
+              "max_length": 30
+            }
+          }
+        },
+        "backup": {
+          "api": "backup"
+        },
+        "provider_save": {
+          "api": "provider_save",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 10000
+            }
+          }
+        },
+        "provider_remove": {
+          "api": "provider_remove",
+          "parameters": {
+            "provider_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 40
+            }
+          }
+        },
+        "model_routes": {
+          "api": "model_routes",
+          "parameters": {
+            "data": {
+              "type": "string",
+              "required": true,
+              "max_length": 2000
+            }
+          }
+        },
+        "model_test": {
+          "api": "model_test",
+          "parameters": {
+            "role": {
+              "type": "string",
+              "required": true,
+              "max_length": 20
+            }
+          }
+        }
+      }
+    }
+  ]
+}

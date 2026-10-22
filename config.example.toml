@@ -1,0 +1,6 @@
+[plugin]
+enabled = true
+config_version = "0.1.0"
+
+# 业务设置在 data_dir/settings.toml，页面保存同时维护 SQLite 快照。
+# 模板见 settings.example.toml；Cookie 和模型密钥不属于普通配置导出。

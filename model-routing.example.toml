@@ -1,0 +1,16 @@
+# 在“模型”页的“TOML 配置模型选择”中保存。
+# host: 后面使用 MaiBot 模型目录里的名称，不是服务商的 model ID。
+[routes]
+text = "host:deepseek-flash-planner"
+vision = "host:mimo-v2.6-flash"
+asr = "disabled"
+audio = "disabled"
+video = "disabled"
+
+[host_options.audio]
+protocol = "openai_compatible"
+video_has_audio = false
+
+[host_options.video]
+protocol = "openai_compatible"
+video_has_audio = false

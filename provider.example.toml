@@ -1,0 +1,12 @@
+# 在“模型”页的“TOML 输入”中添加独立模型。
+# 这只是格式示例，不会提供有效服务；填写实际地址、模型标识与能力。
+# API Key 在提交后仅保存到后端私有文件，不进入普通设置导出。
+id = "my_audio"
+name = "我的音频模型"
+source = "custom"
+protocol = "openai_compatible"
+base_url = "https://api.example.com/v1"
+model = "实际模型标识"
+capabilities = ["audio"]
+video_has_audio = false
+api_key = ""
