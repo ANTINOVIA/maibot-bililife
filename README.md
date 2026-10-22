@@ -1,107 +1,278 @@
-# MaiBot BiliLife / 麦麦的 B 站生活 · 0.2.5
+# MaiBot BiliLife · 麦麦的 B 站生活
 
+[![Version](https://img.shields.io/badge/version-0.2.5-5865F2)](https://github.com/Sakyurara/maibot-bililife/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-让麦麦按兴趣制定日程、阅读与理解 B 站视频、整理评论和回复、保存带来源的经历。
-面向已验证的 **MaiBot 1.3.14 / SDK 2.16.0 / dashboard 1.9.8 / Python 3.12**。
-没有升级宿主。
+**让麦麦拥有持续的 B 站浏览生活。**
 
-## 0.2.5 的使用方式
+BiliLife 是 MaiBot 插件：根据人格、兴趣与近期经历安排每日活动，发现和理解视频，选择是否参与评论，跟进自己的回复，并将有价值的内容保存为可检索记忆。所有操作通过 MaiBot WebUI 管理，支持按模块配置、TOML 编辑和持久化调度。
 
-- **每日安排**：24小时钟面与彩环，旁边列出任务。可切换日期、重新生成今日计划、插入指定时段、删除和恢复显示。
-- **浏览与理解**：每日浏览量、总时长、主题/UP 主/BV 范围及字幕、关键帧、ASR、音视频开关。
-- **评论与回复**：分别设置每日评论量、回复量、冷却、检查频率和自动发布开关，不再使用运行模式。
-- **兴趣与人格**：手动新增兴趣、调整权重、冻结和回滚；填写人工偏好与表达说明，保留版本。
-- **模型**：每个用途直接选择 MaiBot 已配置模型，也可单独配置提供商。保存与连接检查分开，结果放在对应用途下。
-- **设置总览**：账号和各模块概况，跳转到相应模块；提供整份 TOML 编辑和导出。
+[下载安装包](https://github.com/Sakyurara/maibot-bililife/releases/latest) · [快速开始](#快速开始) · [配置说明](#配置说明) · [技术架构](#技术架构)
 
-九个页面使用宿主真实的 `--maibot-*` 主题变量与组件样式，会跟随明暗和 dashboard 风格。
-不依赖 CDN、独立 Web 服务或浏览器自动化。
+## 功能一览
 
-## 配置与默认权限
+```mermaid
+flowchart LR
+    A[人格与兴趣] --> B[每日计划]
+    B --> C[发现与筛选视频]
+    C --> D[字幕与多模态理解]
+    D --> E[评论草稿与回复跟进]
+    D --> F[经历与记忆]
+    E --> F
+    F --> G[每日复盘]
+    G --> A
+    F --> H[MaiBot 对话召回]
+```
 
-业务配置是插件私有目录的 **`settings.toml`**。常用项可在模块表单调整；
-需要手填或批量修改时用 TOML 编辑器。模板见 [settings.example.toml](settings.example.toml)。
+| 模块 | 功能 | 可调整内容 |
+| --- | --- | --- |
+| 每日安排 | 24 小时钟面与时段环、任务详情、重新生成、插入与删除日程 | 时区、计划时间、活跃时段、超时与重试 |
+| 浏览与理解 | 关键词发现、指定 BV 或视频链接、UP 主内容、浏览和跳过记录 | 每日浏览量、时长、主题范围、媒体处理方式 |
+| 评论与回复 | 草稿编辑、手动或自动发布、相关评论线程跟进、发布状态核对 | 评论与回复独立开关、每日额度、冷却、最大轮数 |
+| 经历记忆 | 带来源的经历保存、检索、编辑、纠错与遗忘 | 记忆开关、召回数量、上下文长度 |
+| 兴趣与人格 | 兴趣权重、人工干预、冻结维度、变更历史与回滚 | 自动兴趣变化、人格补充说明、表达偏好 |
+| 模型 | 直接选择 MaiBot 模型，或配置独立提供商 | 文本、视觉、ASR、音频与视频分别路由 |
+| 每日复盘 | 汇总实际经历、互动、记忆变化和资源消耗 | 复盘时间、可选推送会话 |
+| 设置与维护 | 模块设置总览、账号扫码、运行记录、备份与配置导出 | 下载、缓存、存储、保留时间、模型预算 |
+
+页面跟随 MaiBot 的主题与明暗设置。顶部提供“暂停全部任务”和“停止自动发布”，评论与回复分别控制，无需切换统一运行模式。
+
+### 视频如何被理解
+
+| 资料 | 用途 | 所需能力 |
+| --- | --- | --- |
+| 标题、简介与元数据 | 发现内容、判断是否继续了解 | 文本模型 |
+| 可访问字幕 | 按时间戳提取观点与细节 | 文本模型 |
+| 关键帧 | 理解画面、演示与视觉信息 | FFmpeg + 视觉模型 |
+| 音频转录 | 无字幕时取得语音文本 | FFmpeg + ASR 模型 |
+| 音频片段 | 理解语音与声音内容 | FFmpeg + 支持音频输入的模型 |
+| 视频片段 | 综合理解有界片段的画面，可按配置包含音轨 | FFmpeg + 支持视频输入的模型 |
+
+每条理解记录展示实际资料类型、时间范围、摘要、来源和缺失信息。只有标题与简介时显示为“元数据浏览”；字幕、抽帧与片段分析均保留覆盖范围。音视频处理采用受大小和时长限制的片段，不提供无限实时视频流。
+
+## 快速开始
+
+### 环境要求
+
+| 组件 | 适配版本 / 要求 |
+| --- | --- |
+| MaiBot | 1.3.14 |
+| 插件 SDK | maibot-plugin-sdk 2.16.0，Host / Runner v2 |
+| Dashboard | 1.9.8，插件自定义页面 v2 |
+| Python | 3.12 |
+| FFmpeg | 关键帧、音频及视频片段处理需要 |
+| 模型 | 至少配置文本模型；其他能力按需添加 |
+
+插件内置 WebUI，无需额外部署前端服务、浏览器或数据库服务。
+
+### 安装与首次配置
+
+1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载 `maibot-bililife-0.2.5.zip`，并核对同页的 SHA256 文件。
+2. 在 MaiBot WebUI 的插件管理中导入安装包并启用。
+3. 打开 BiliLife 的**设置总览**，生成二维码，使用 B 站客户端完成独立扫码登录。
+4. 打开**模型**，选择文本模型；需要画面理解时，再选择视觉模型。
+5. 在**浏览与理解**设置主题、每日浏览量与媒体处理方式，在**每日安排**设置时间。
+6. 生成日程并开始运行；在**评论与回复**查看草稿和发布状态。
+
+GitHub 自动生成的 Source code ZIP 用于源码下载，安装请使用 Release 附件中的插件 ZIP。
+
+默认每天最多浏览 **4 条视频 / 40 分钟**，评论上限 **1 条**、回复上限 **2 条**，**评论和回复自动发布均关闭**。额度是上限，不是每日必须完成的数量。
+
+## 配置说明
+
+常用设置在各模块页面直接保存。批量编辑可使用模块内的 TOML 编辑器，或在设置总览编辑整份业务配置。
+
+### 1. 每日安排与浏览范围
+
+以下为 `settings.toml` 的局部示例，完整字段见 [settings.example.toml](settings.example.toml)。
 
 ```toml
+[schedule]
+planner_enabled = true
+timezone = "Asia/Shanghai"
+plan_time = "09:00"
+active_start = "09:00"
+active_end = "22:30"
+task_timeout_seconds = 300
+max_retries = 2
+
 [browse]
 browsing_enabled = true
 max_videos = 4
+max_video_seconds = 900
 max_browse_seconds = 2400
+allowed_topics = ["科学", "技术", "日常生活"]
+excluded_topics = []
+allowed_uploaders = []
+allowed_videos = []
+enable_frames = true
+max_frames = 3
+enable_asr = false
+enable_audio_model = false
+enable_video_model = false
+segment_seconds = 90
+max_download_mb = 40
+daily_download_mb = 120
+```
 
+- 时间使用配置的业务时区；时长单位为秒，下载与存储大小单位为 MiB。
+- `allowed_uploaders` 填数字 UID 字符串，`allowed_videos` 填完整 BV 号。
+- 在钟面旁可插入指定时段的任务；重新生成计划会生成新版本，保留历史执行记录。
+- 删除任务会取消并隐藏，恢复显示不会重新执行已取消的任务。
+
+### 2. 模型选择与独立提供商
+
+在**模型**页面为每项用途分别选择：
+
+| 用途 | 负责内容 |
+| --- | --- |
+| 文本与规划 | 日程、筛选、摘要、互动决策、记忆与复盘 |
+| 关键帧视觉 | 图片与抽样画面理解 |
+| ASR 转录 | 语音转文字 |
+| 直接音频理解 | 音频片段分析 |
+| 直接视频理解 | 视频片段分析 |
+
+**使用 MaiBot 已有模型：**直接在下拉框选择宿主配置中的模型名称并保存，插件在后端引用对应配置和凭据。无需重新输入宿主密钥。
+
+模型路由也可在“配置模型选择”的 TOML 入口保存。将下面名称替换为 MaiBot 模型目录中的名称，而非服务商的模型 ID：
+
+```toml
+[routes]
+text = "host:你的文本模型名称"
+vision = "host:你的视觉模型名称"
+asr = "disabled"
+audio = "disabled"
+video = "disabled"
+```
+
+**独立配置模型：**在模型页新增提供商，填写 Base URL、模型 ID、API Key、协议与输入能力。也可在该入口粘贴 TOML：
+
+```toml
+id = "custom_text"
+name = "独立文本模型"
+source = "custom"
+protocol = "openai_compatible"
+base_url = "https://api.example.com/v1"
+model = "替换为服务商模型ID"
+capabilities = ["text"]
+api_key = "替换为你的APIKey"
+```
+
+保存后，在对应用途的下拉框选择该条目。`api.example.com` 是格式占位地址，需换成实际服务地址。提供商 TOML 应通过专用入口提交，密钥不填写到普通 `settings.toml`。
+
+支持 `openai_compatible` 和原生 `gemini` 协议。输入能力须由服务本身支持；为条目勾选音频或视频不会改变模型能力。原生 Gemini 用于音视频理解，ASR 使用转录接口。模型选定后，还需在**浏览与理解**启用相应处理开关。
+
+配置文件参考：[模型路由](model-routing.example.toml) · [独立提供商](provider.example.toml)。
+
+### 3. 评论与回复
+
+```toml
 [comments]
 comments_enabled = true
 auto_publish_comments = false
 max_comments = 1
+max_per_video = 1
+cooldown_seconds = 3600
 
 [replies]
 replies_enabled = true
 auto_publish_replies = false
 max_replies = 2
+max_thread_rounds = 2
+user_cooldown_seconds = 21600
+reply_interval_seconds = 3600
+```
+
+保留 `auto_publish_* = false` 时，生成的内容进入草稿，可在互动页面编辑和手动发布。需要自动发布时，分别启用评论或回复开关，并设置主题、UP 主或指定视频范围。
+
+所有发布入口共用账号状态、范围、上下文、额度、冷却和去重检查。回复默认只跟进本账号已发布评论及其相关线程；无新增信息时可以结束对话。请求结果未知时保留“待核对”状态，不直接重复提交。
+
+### 4. 记忆、兴趣与复盘
+
+```toml
+[memory]
+memory_enabled = true
+recall_limit = 4
+recall_chars = 2400
 
 [persona]
 evolution_enabled = true
-persona_guidance = "这周多了解天文，遇到争论就结束。"
-expression_preferences = ["表达简短", "保留不确定性"]
+persona_guidance = ""
+expression_preferences = []
+
+[review]
+review_enabled = true
+review_time = "22:00"
+summary_stream_id = ""
 ```
 
-页面保存立即生效，同时更新 SQLite 配置快照和 TOML。直接修改服务器文件后重载插件。
-非法 TOML 或越界值不会覆盖上次有效设置，总览会显示具体配置错误状态。
-宿主 `config.toml` 仍只管理插件启用和 SDK 配置格式版本。
+在**兴趣与人格**页面调整具体主题的权重、冻结维度或回滚变化。`persona_guidance` 用于填写人工偏好，`expression_preferences` 用于填写表达倾向；这些设置不改写 MaiBot 的核心身份、权限和固定人格配置。
 
-默认生成草稿，**不自动发布评论或回复**。启用某个自动发布开关后，仍受内容范围、
-上下文、额度、间隔、重复检测和账号状态检查。额度是上限，不是必须完成的指标。
-“暂停全部任务”和“停止自动发布”始终可见；已经发出的请求不能假装撤回。
-从0.2.0升级时将旧权限转换为各模块设置，不因移除模式而开启发布。
+经历保存在插件记忆库，通过 `bililife_recall` 向 MaiBot 提供带来源的检索结果，并在可解析的会话中通过 `maisaka.context.append` 追加上下文。页面区分插件记忆、上下文追加和宿主长期记忆写入；当前适配版本不提供宿主长期记忆写入。
 
-账号在设置总览独立扫码。Cookie 保存于后端 `credential.json`；模型密钥在
-`model-secrets.json`，文件0600、目录0700，不进入前端回显、普通TOML或日志导出。
-模型选择 TOML 见 [model-routing.example.toml](model-routing.example.toml)，
-独立模型输入格式见 [provider.example.toml](provider.example.toml)。
+复盘仅汇总实际执行记录。`summary_stream_id` 留空时不向会话推送，填写目标会话标识后才启用对应推送。
 
-## 真实证据、互动与记忆
+### 5. 模型预算与存储
 
-视频资料区分元数据、带时间戳字幕、ASR、抽样帧与直接音视频片段。
-只有标题简介时标记“元数据浏览”，禁止据此发布；抽样不会被称为完整观看。
-下载、转码和模型调用有时长、大小、次数和存储预算；FFmpeg 使用异步参数数组。
-媒体连接拒绝任意域名、内网 DNS 地址和重定向，外部文字没有系统指令权限。
+```toml
+[models]
+max_model_calls = 24
+max_tokens = 70000
+output_tokens = 1600
+model_timeout_seconds = 100
 
-发布先持久登记 outbox。请求超时、进程中断或结果未知时禁止盲目重发；只读核对能唯一
-匹配时补记成功，否则保持未知。不承诺网络发布 exactly-once。
-回复只跟进本账号已发布评论的相关线程，保存根评论、父评论和被回复对象。
+[resources]
+max_storage_mb = 256
+retention_days = 60
+cache_hours = 12
+```
 
-`bililife_recall` 是实际注册的宿主检索工具，按相关性、时间、重要度返回有界经历和来源。
-可解析真实会话时调用 `maisaka.context.append`。插件经历、可检索记忆、上下文追加与
-宿主长期写入分别显示；当前宿主无已核实的长期记忆写入接口，显示不支持。
-人格干预是插件偏好，宿主核心人格和权限不会被自动改写。
+预算按业务日期结算，任务与手动操作共享额度。到达上限后停止新增对应消耗，状态显示在总览。提高浏览量或启用音视频处理时，应同步检查模型、下载和存储预算。
 
-## 持久化与开发
+### 配置保存在哪里
 
-SQLite WAL、迁移版本2、同日有效计划唯一索引、事务领取和本机文件锁保护调度。
-删除日程采用隐藏与取消，保留审计和发布记录；恢复显示不会重新执行已经取消的任务。
-重新生成计划会取消旧计划未完成任务，保留手工独立安排和已执行记录。
-任务和截止时间持久保存，卸载释放客户端、子进程和执行锁。
+| 文件 | 内容 | 修改方式 |
+| --- | --- | --- |
+| `config.toml` | SDK 插件启用与配置格式版本 | MaiBot 插件配置 |
+| `settings.toml` | 模块开关、范围、日程、额度与偏好 | 模块表单或业务 TOML 编辑器 |
+| `model-routing.json` | 模型条目与用途路由，不含 API Key | 模型页面 |
+| `model-secrets.json` | 独立模型凭据 | 模型页面专用入口 |
+| `credential.json` | 独立扫码获得的账号凭据 | 设置总览扫码 |
+| `bililife.sqlite3` | 日程、任务、经历、互动、记忆与审计 | 插件自动管理 |
 
-```powershell
-python -m pip install -r requirements-test.lock
-python -m pytest tests -q
+SDK 的 `config.toml` 由宿主管理；其余业务文件位于宿主分配的插件专属数据目录，标准布局为 `<MaiBot>/data/plugins/local.maibot-bililife/`。页面保存立即更新有效设置；直接修改 `settings.toml` 后需要重载插件。格式或字段错误不会覆盖上次有效配置，具体原因显示在总览。凭据仅保存在后端，不通过普通配置导出或前端响应回显。
+
+## 技术架构
+
+插件在 MaiBot 独立 Runner 内模块化运行，采用 SQLite WAL 存储，通过宿主认证的插件 API 桥接 WebUI 与后端。
+
+| 层次 | 主要模块 | 职责 |
+| --- | --- | --- |
+| 宿主适配 | `maibot_adapter.py`、`plugin.py` | 生命周期、人格上下文、模型调用、检索工具与上下文追加 |
+| 平台与媒体 | `bilibili_adapter.py`、`media_processor.py`、`video_understanding.py` | 账号、内容读取、异步转码、资料对齐与理解 |
+| 计划与执行 | `daily_planner.py`、`task_executor.py` | 结构化计划、依赖关系、任务状态、取消、恢复与预算 |
+| 互动 | `interaction_service.py` | 草稿、回复线程、发布策略、去重及 outbox 核对 |
+| 记忆与偏好 | `memory_bridge.py` | 记忆检索、纠错、同步状态与兴趣变更 |
+| 配置与界面 | `model_router.py`、`config_io.py`、`webui_service.py`、`webui/` | 模型路由、TOML、模块设置与中文界面 |
+| 持久化 | `storage.py`、`migrations/` | 事务、迁移、执行记录与审计 |
+
+调度使用持久化时间与状态，同日有效主计划唯一，任务领取由事务和本机执行锁保护。重启后恢复或处理过期任务，卸载时停止调度并释放客户端和子进程。媒体下载与 FFmpeg 异步执行，不长时间阻塞宿主事件循环。
+
+发布操作在请求前写入 outbox；网络中断或超时后先核对平台状态，不能确认时保留未知状态。媒体地址受协议、域名与公网地址检查约束，外部字幕和评论仅作为待分析资料处理。
+
+### 维护与升级
+
+运行记录页提供数据库在线备份。升级前保留数据库与私有配置，使用版本化安装包更新，重载插件后保留既有任务和发布记录。完整安装、备份、恢复及卸载步骤见 [运维文档](docs/OPERATIONS.md)。
+
+WebUI 源码位于 `webui/src/`，安装包包含 `webui/index.html`。从源码构建：
+
+```bash
 python scripts/build_webui.py
 python scripts/package.py
 ```
 
-宿主支持的安装包为 `dist/maibot-bililife-0.2.5.zip`，附SHA256。
-源文件在 `webui/src/`，构建产物为无外部资源的 `webui/index.html`。
+## 开源协议
 
-- [安装、备份、升级与回滚](docs/OPERATIONS.md)
-- [模型提供商](docs/MODEL_PROVIDERS.md)
-- [0.2.5验收与边界](docs/ACCEPTANCE_0.2.5.md)
-- [实际兼容环境](docs/COMPATIBILITY.md)
-- [架构](docs/ARCHITECTURE.md) · [第三方许可与清单链接](THIRD_PARTY.md)
+本项目采用 [MIT License](LICENSE)。
 
-## 安装包与许可证
-
-从本仓库 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载版本化
-安装 ZIP，并核对同页 SHA256 文件。GitHub 自动生成的源码 ZIP 不替代插件安装包。
-
-本项目采用 [MIT License](LICENSE)，Copyright (c) 2026 Sakyurara and BiliLife contributors。
-复用平台客户端的原作者版权与许可见 [第三方说明](THIRD_PARTY.md) 和 `vendor/LICENSE`。
+Copyright (c) 2026 Sakyurara and BiliLife contributors。复用平台客户端保留原作者版权和 [第三方许可证](vendor/LICENSE)，详见 [第三方说明](THIRD_PARTY.md)。
