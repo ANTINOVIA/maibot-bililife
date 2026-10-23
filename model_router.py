@@ -19,17 +19,44 @@ from .vendor.client import write_private_json
 ROLES = ("text", "vision", "asr", "audio", "video")
 
 
-class Provider(BaseModel):
+class ModelServiceError(RuntimeError):
+    def __init__(self,code,message,http_status=None):
+        super().__init__(message)
+        self.code,self.http_status=code,http_status
+
+
+def service_error(status,payload):
+    error=payload.get('error',payload) if isinstance(payload,dict) else {}
+    if not isinstance(error,dict):error={}
+    raw=str(error.get('code',error.get('type','')))
+    code=raw if re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}',raw) and not raw.startswith(('sk-','ghp_','gho_')) else 'HTTP_'+str(status) if status else 'PROVIDER_ERROR'
+    message='模型提供商拒绝请求'+(' HTTP '+str(status) if status else '')+' / '+code
+    detail=str(error.get('message','')).lower()
+    if 'enable_thinking' in detail and 'stream' in detail:message+='：此模型的非流式请求需要关闭思考模式'
+    elif 'video' in detail and 'too short' in detail:message+='：视频片段过短，请提供满足模型最短时长要求的片段'
+    elif 'video' in detail and any(x in detail for x in ('unsupported','not support')):message+='：此模型或服务未支持当前视频输入，请选择关键帧模式或支持视频的模型'
+    elif 'video' in detail and any(x in detail for x in ('frame','duration','format','invalid')):message+='：视频格式、帧数或时长不符合服务要求'
+    return ModelServiceError(code,message,status)
+
+
+class MediaOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    protocol: Literal["openai_compatible", "qwen_compatible", "dashscope", "gemini"] = "openai_compatible"
+    video_has_audio: bool = False
+    video_fps: float = Field(default=1.0,ge=0.1,le=10)
+    video_max_frames: int = Field(default=16,ge=1,le=64)
+    qwen_disable_thinking: bool = True
+
+
+class Provider(MediaOptions):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_-]{0,39}$")
     name: str = Field(min_length=1, max_length=80)
     source: Literal["custom", "maibot"] = "custom"
     host_model_name: str = Field(default="", max_length=150)
-    protocol: Literal["openai_compatible", "gemini"] = "openai_compatible"
     base_url: str = Field(default="", max_length=500)
     model: str = Field(default="", max_length=150)
     capabilities: List[Literal["text", "vision", "asr", "audio", "video"]] = ["text"]
-    video_has_audio: bool = False
 
     @model_validator(mode="after")
     def validate_provider(self):
@@ -46,6 +73,10 @@ class Provider(BaseModel):
             raise ValueError("视频含音轨需要同时声明视频与音频能力")
         if self.protocol == "gemini" and "asr" in self.capabilities:
             raise ValueError("原生 Gemini 协议用于音频理解；ASR 请使用转录协议或宿主 voice 角色")
+        if self.protocol in ('qwen_compatible','dashscope') and 'asr' in self.capabilities:
+            raise ValueError('Qwen 专用协议用于内容理解；ASR 请另选转录协议')
+        if self.source=='custom' and self.protocol=='dashscope' and not urlsplit(self.base_url).path.rstrip('/').endswith('/api/v1'):
+            raise ValueError('DashScope 原生 Base URL 须以 /api/v1 结尾；兼容地址请选择 Qwen 兼容协议')
         return self
 
 
@@ -171,8 +202,7 @@ class ModelRouter:
             if not isinstance(options,dict) or set(options)-{"audio","video"}:
                 raise ValueError("媒体协议设置无效")
             for role,item in options.items():
-                if not isinstance(item,dict) or set(item)-{"protocol","video_has_audio"} or item.get("protocol","openai_compatible") not in ("openai_compatible","gemini") or type(item.get("video_has_audio",False)) is not bool:
-                    raise ValueError("媒体协议或音轨选项无效")
+                MediaOptions.model_validate(item)
         else:
             routes=submitted
         if not isinstance(routes, dict) or set(routes) != set(ROLES):
@@ -235,10 +265,17 @@ class ModelRouter:
             if not model or not api:
                 raise RuntimeError("宿主模型或提供商已被移除")
             provider.update(model=model["model_identifier"], base_url=api["base_url"], api_key=api.get("api_key", ""))
+            if provider['protocol']=='dashscope':
+                parsed=urlsplit(provider['base_url'])
+                official=parsed.hostname in ('dashscope.aliyuncs.com','dashscope-intl.aliyuncs.com','dashscope-us.aliyuncs.com') or (parsed.hostname or '').endswith('.maas.aliyuncs.com')
+                if parsed.path.rstrip('/').endswith('/compatible-mode/v1') and official:
+                    provider['base_url']=urlunsplit((parsed.scheme,parsed.netloc,parsed.path.rstrip('/')[:-len('/compatible-mode/v1')]+'/api/v1','',''))
         else:
             secret = self.secrets.get(provider["id"], {})
             provider["api_key"] = secret.get("key", "") if secret.get("endpoint") == provider["base_url"] else ""
         endpoint(provider["base_url"])
+        if provider['protocol']=='dashscope' and not urlsplit(provider['base_url']).path.rstrip('/').endswith('/api/v1'):
+            raise RuntimeError('DashScope 原生协议需要 /api/v1 地址；当前宿主地址无法安全转换，请选择 Qwen 兼容协议')
         if not provider["api_key"]:
             raise RuntimeError("提供商尚未配置密钥")
         return provider
@@ -257,8 +294,10 @@ class ModelRouter:
                 form.add_field("file",audio,filename="segment.wav",content_type="audio/wav")
             async with client.post(url,headers=headers,json=payload if form is None else None,data=form,allow_redirects=False) as response:
                 if response.status != 200:
-                    # 不把供应商响应、URL 查询或认证头带回前端/日志。
-                    raise RuntimeError(f"模型提供商拒绝请求 HTTP {response.status}")
+                    # 只提取错误码和固定分类说明，不回显供应商原文、URL或认证信息。
+                    try:error=json.loads(await response.content.read(65536))
+                    except (ValueError,UnicodeError):error={}
+                    raise service_error(response.status,error)
                 data=bytearray()
                 async for chunk in response.content.iter_chunked(65536):
                     self.check()
@@ -276,6 +315,10 @@ class ModelRouter:
         if provider is None:
             task = self.config().vision_model_task if role == "vision" else self.config().text_model_task
             return await self.ctx.llm.generate(messages,task_name=task,max_tokens=max_tokens,timeout_ms=(self.config().model_timeout_seconds+5)*1000)
+        if provider['protocol']=='dashscope':
+            from .qwen_protocol import native_payload, native_response
+            response=await self.request(provider,'/services/aigc/multimodal-generation/generation',payload=native_payload(provider,messages,max_tokens,media))
+            return native_response(response,provider['model'])
         if provider["protocol"] == "gemini":
             parts = []
             for message in messages[1:]:
@@ -303,11 +346,14 @@ class ModelRouter:
             else:
                 content=list(content)
             if media["kind"]=="video":
-                content.append({"type":"video_url","video_url":{"url":"data:"+media["mime"]+";base64,"+base64.b64encode(media["bytes"]).decode()}})
+                item={"type":"video_url","video_url":{"url":"data:"+media["mime"]+";base64,"+base64.b64encode(media["bytes"]).decode()}}
+                if provider['protocol']=='qwen_compatible':item['fps']=provider.get('video_fps',1.0)
+                content.append(item)
             else:
                 content.append({"type":"input_audio","input_audio":{"data":base64.b64encode(media["bytes"]).decode(),"format":"wav"}})
             messages=[messages[0],{"role":"user","content":content},*messages[2:]]
         payload={"model":provider["model"],"messages":messages,"max_tokens":max_tokens,"stream":False}
+        if provider['protocol']=='qwen_compatible' and provider.get('qwen_disable_thinking',True):payload['enable_thinking']=False
         response=await self.request(provider,"/chat/completions",payload=payload)
         choices=response.get("choices",[])
         text=choices[0].get("message",{}).get("content","") if choices else ""

@@ -190,7 +190,7 @@ async def test_metadata_only_cannot_publish(engine):
 
 async def test_no_subtitles_or_media_never_claims_watched(engine):
     metadata=seed_video(engine)
-    engine.settings=Settings(enable_frames=False,enable_asr=False)
+    engine.settings=Settings(video_understanding_mode="subtitle",enable_asr=False)
     async def no_subtitles(_):
         return [],'本视频没有可访问字幕'
     engine.platform.subtitles=no_subtitles
@@ -206,7 +206,7 @@ async def test_no_subtitles_or_media_never_claims_watched(engine):
 
 async def test_evidence_quote_repair_is_bounded(engine):
     metadata=seed_video(engine)
-    engine.settings=Settings(enable_frames=False,enable_asr=False)
+    engine.settings=Settings(video_understanding_mode="subtitle",enable_asr=False)
     async def subtitles(_):
         return [{'from':0,'to':2,'text':'真实字幕片段'}],'有限字幕'
     engine.platform.subtitles=subtitles

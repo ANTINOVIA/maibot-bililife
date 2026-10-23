@@ -14,3 +14,9 @@ video_has_audio = false
 [host_options.video]
 protocol = "openai_compatible"
 video_has_audio = false
+video_fps = 1.0
+video_max_frames = 16
+qwen_disable_thinking = true
+# 选择宿主 Qwen 视频模型时，可改用 qwen_compatible；
+# dashscope 为原生协议，需要实际可用的原生地址。
+# 独立模型的协议在提供商配置中设置，本节不覆盖独立模型。

@@ -35,7 +35,7 @@ def test_modules_cover_all_settings_and_toml_round_trip():
     cfg=Settings(persona_guidance='倾向简短表达\n多了解天文',expression_preferences=['用中文','少用感叹号'],prompt_overrides={'plan':'保留休息\n允许不互动'})
     text=settings_document(cfg)
     assert Settings.model_validate(parse_settings_document(text))==cfg
-    assert 'mode =' not in text and 'api_key' not in text
+    assert not any(line.startswith('mode =') for line in text.splitlines()) and 'api_key' not in text
 
 
 async def test_partial_settings_concurrent_updates_keep_other_modules(engine):

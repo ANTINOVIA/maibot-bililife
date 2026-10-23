@@ -5,7 +5,7 @@ import os
 import tempfile
 import tomllib
 
-from .configuration import Settings
+from .configuration import Settings, migrate_media_settings
 from .module_settings import MODULES
 
 
@@ -40,6 +40,7 @@ def parse_settings_document(text,module="",legacy=False):
         raise ValueError("TOML 超过40,000字符")
     document=tomllib.loads(text)
     if legacy:
+        if isinstance(document.get('browse'),dict):document['browse']=migrate_media_settings(document['browse'])
         for section,key in (("schedule","concurrency"),("browse","allowed_videos")):
             if isinstance(document.get(section),dict):
                 document[section].pop(key,None)

@@ -23,6 +23,8 @@ class DiagnosticError(RuntimeError):
 
 
 def failure(exc):
+    from .model_router import ModelServiceError
+    if isinstance(exc,ModelServiceError):return exc.code,str(exc),exc.http_status
     if isinstance(exc,DiagnosticError):
         return exc.code,str(exc),exc.http_status
     if isinstance(exc,(asyncio.TimeoutError,TimeoutError)):
@@ -73,14 +75,14 @@ async def check_model(engine,role):
             if not shutil.which('ffmpeg'):raise DiagnosticError('LOCAL_FFMPEG_MISSING','视频连接检查需要 FFmpeg')
             cache=engine.runtime/('diagnostic-'+uid()+'.mp4')
             process=await asyncio.create_subprocess_exec(shutil.which('ffmpeg'),'-nostdin','-hide_banner','-loglevel','error',
-                '-f','lavfi','-i','color=c=green:s=128x96:r=1','-t','1','-an','-c:v','libx264','-pix_fmt','yuv420p','-y',str(cache),
+                '-f','lavfi','-i','color=c=green:s=128x96:r=4','-t','4','-an','-c:v','libx264','-pix_fmt','yuv420p','-y',str(cache),
                 stdout=asyncio.subprocess.DEVNULL,stderr=asyncio.subprocess.DEVNULL)
             try:
                 await asyncio.wait_for(process.wait(),15)
                 if process.returncode:raise DiagnosticError('LOCAL_MEDIA_ERROR','诊断视频生成失败')
             finally:
                 if process.returncode is None:process.kill();await process.wait()
-            media={'kind':'video','mime':'video/mp4','bytes':await asyncio.to_thread(cache.read_bytes),'seconds':1}
+            media={'kind':'video','mime':'video/mp4','bytes':await asyncio.to_thread(cache.read_bytes),'seconds':4}
         engine.check()
         request_started=time.monotonic()
         timeout=min(engine.config().model_timeout_seconds,30)

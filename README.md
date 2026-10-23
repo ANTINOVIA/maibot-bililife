@@ -108,11 +108,9 @@ max_browse_seconds = 2400
 allowed_topics = ["科学", "技术", "日常生活"]
 excluded_topics = []
 allowed_uploaders = []
-enable_frames = true
+video_understanding_mode = "frames"
 max_frames = 3
 enable_asr = false
-enable_audio_model = false
-enable_video_model = false
 segment_seconds = 90
 max_download_mb = 40
 daily_download_mb = 120
@@ -126,6 +124,8 @@ daily_download_mb = 120
 - 调度按顺序执行，界面不再提供固定为 1 的并发数选项。
 
 可选择 `read_comments` 日程，只阅读兴趣主题下的评论区，不取得字幕、音频或画面。每日最多 `max_comment_sessions` 次，每次最多 `max_comments_read` 条。评论摘要、原文引用和来源单独保存，标明未观看视频，不据此生成视频评论。
+
+在**浏览与理解 → 理解方式**选择一种媒体路径：`frames` 截取关键帧，`video` 提交视频片段，`audio` 提交音频片段，`subtitle` 仅使用可访问字幕与元数据。抽帧使用“关键帧视觉”模型，视频片段使用“直接视频理解”模型；两种方式不会同时执行。ASR 可另行启用，作为补充转录。
 
 ### 2. 模型选择与独立提供商
 
@@ -167,7 +167,9 @@ api_key = "替换为你的APIKey"
 
 保存后，在对应用途的下拉框选择该条目。`api.example.com` 是格式占位地址，需换成实际服务地址。提供商 TOML 应通过专用入口提交，密钥不填写到普通 `settings.toml`。
 
-支持 `openai_compatible` 和原生 `gemini` 协议。输入能力须由服务本身支持；为条目勾选音频或视频不会改变模型能力。原生 Gemini 用于音视频理解，ASR 使用转录接口。模型选定后，还需在**浏览与理解**启用相应处理开关。
+支持通用 `openai_compatible`、`qwen_compatible`、原生 `dashscope` 和原生 `gemini` 协议。输入能力须由服务本身支持；为条目勾选音频或视频不会改变模型能力。模型选定后，在**浏览与理解**选择对应理解方式。
+
+**Qwen 视频模型：**在独立模型条目中选择“Qwen / 阿里云兼容”，使用服务的兼容 Base URL（阿里云通常以 `/compatible-mode/v1` 结尾），声明 `video` 能力。插件发送 Qwen 的视频输入格式及采样 FPS，默认关闭非流式请求的思考模式。需要原生接口时选择“DashScope 原生”，Base URL 应以 `/api/v1` 结尾；可设置 FPS 和最大采样帧数。完整示例见 [Qwen 提供商配置](provider.qwen.example.toml)。选择 MaiBot 已有模型时，在用途卡片设置协议；选择独立模型时，在该模型自己的编辑入口设置协议。
 
 连接检查与日常生活额度独立，使用最小文本或合成媒体请求。成功显示请求往返延迟（ms），失败显示 HTTP 或本地错误码；检查本身仍可能产生服务商费用。
 

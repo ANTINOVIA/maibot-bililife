@@ -85,6 +85,12 @@ WebUI 数据库备份只附带不含密钥的模型路由快照。
 模型选择可在模型页直接下拉，或用 `model-routing.example.toml` 的格式输入；
 独立提供商可参考 `provider.example.toml`。提供商密钥不写入普通业务TOML及导出。
 
+理解方式使用 `[browse].video_understanding_mode`，可选 `frames`、`video`、`audio`、`subtitle`。
+旧的三个媒体开关在启动时迁移，保留原有效处理路径；升级不会因配置了视频模型就自动改用视频。
+Qwen 兼容与 DashScope 原生配置见 `provider.qwen.example.toml` 和 `docs/MODEL_PROVIDERS.md`。
+若回滚到不支持这些协议的旧源码，应先暂停任务、保留当前凭据，再恢复部署备份中的模型路由；
+不要把新增 Qwen 协议名称留给旧版继续调用。业务媒体单选在回滚时转换为旧开关。
+
 ## 0.2.6 自主生活设置
 
 升级会移除旧 `allowed_videos` 特殊放行和固定 `concurrency` 字段，保留现有主题、账号及互动权限。

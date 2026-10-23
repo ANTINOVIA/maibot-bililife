@@ -58,9 +58,7 @@ class Settings(BaseModel):
     vision_model_task: str = "vlm"
     asr_model_task: str = "voice"
     enable_asr: bool = False
-    enable_frames: bool = True
-    enable_audio_model: bool = False
-    enable_video_model: bool = False
+    video_understanding_mode: Literal["frames", "video", "audio", "subtitle"] = "frames"
     memory_enabled: bool = True
     evolution_enabled: bool = True
     recall_limit: int = 4
@@ -99,6 +97,8 @@ class Settings(BaseModel):
         for key, (low, high) in bounds.items():
             if not low <= getattr(self, key) <= high:
                 raise ValueError(f"{key} 必须在 {low}..{high} 之间")
+        if self.video_understanding_mode=='frames' and self.max_frames<1:
+            raise ValueError('关键帧理解至少需要1张帧；无需画面时请选择仅字幕')
         for rows in (self.allowed_topics, self.excluded_topics, self.allowed_uploaders):
             if len(rows) > 30 or any(not x.strip() or len(x) > 80 for x in rows):
                 raise ValueError("主题或 UP 主列表过长或含空项")
@@ -133,6 +133,7 @@ class PluginConfig(PluginConfigBase):
 def migrate_settings(data):
     """0.2.0 模式仅在加载旧配置时转换；新 API 和配置不再接受模式字段。"""
     result = dict(data)
+    result=migrate_media_settings(result)
     result.pop("concurrency", None)
     result.pop("allowed_videos", None)
     legacy = result.pop("mode", None)
@@ -142,4 +143,13 @@ def migrate_settings(data):
             result.setdefault(key, legacy != "observe_only")
         for key in ("auto_publish_comments", "auto_publish_replies"):
             result.setdefault(key, legacy == "autonomous" and confirmed is True)
+    return result
+
+
+def migrate_media_settings(data):
+    result=dict(data)
+    fields=('enable_frames','enable_audio_model','enable_video_model')
+    if 'video_understanding_mode' not in result and any(key in result for key in fields):
+        result['video_understanding_mode']='video' if result.get('enable_video_model') else 'audio' if result.get('enable_audio_model') else 'frames' if result.get('enable_frames',True) and result.get('max_frames',3)>0 else 'subtitle'
+    for key in fields:result.pop(key,None)
     return result

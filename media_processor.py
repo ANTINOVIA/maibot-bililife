@@ -13,11 +13,13 @@ class MediaProcessor:
 
     async def collect(self, metadata, evidence, video_id):
         cfg, images, direct = self.config(), [], None
-        required = cfg.enable_frames or cfg.enable_asr or cfg.enable_audio_model or cfg.enable_video_model
+        mode=cfg.video_understanding_mode
+        evidence['understanding_mode']=mode
+        required = mode!='subtitle' or cfg.enable_asr
         if not required or not shutil.which("ffmpeg"):
             evidence["limitations"].append("FFmpeg 不可用或媒体分析未启用")
             return images, direct
-        role = "video" if cfg.enable_video_model else "audio" if cfg.enable_audio_model else ""
+        role = mode if mode in ('video','audio') else ''
         provider = None
         if role:
             try:
@@ -82,7 +84,7 @@ class MediaProcessor:
                 evidence["media_segments"]=[{"from":0,"to":seconds,"label":label,"audio_included":True}]
                 evidence["coverage"]="直接音频片段理解与可用字幕"
                 evidence["limitations"].append("未向模型提交画面；音频仅覆盖开头受限片段")
-            elif cfg.enable_frames and streams.get("video"):
+            elif mode=='frames' and streams.get("video"):
                 media=await fetch("video")
                 positions=[metadata["duration"]*(i+1)/(cfg.max_frames+1) for i in range(cfg.max_frames)]
                 for i,position in enumerate(positions):

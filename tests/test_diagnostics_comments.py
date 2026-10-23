@@ -76,7 +76,7 @@ async def test_repeat_click_returns_existing_diagnostic_job(engine):
 
 
 def seed_comments(engine,bad_quote=False):
-    engine.settings=Settings(max_videos=0,max_browse_seconds=60,enable_frames=True,enable_asr=True)
+    engine.settings=Settings(max_videos=0,max_browse_seconds=60,video_understanding_mode="frames",enable_asr=True)
     engine.active=lambda *args:True
     async def discover(*args):return [{'bvid':'BV1xx411c7mD','title':'科学话题','description':'讨论','up_uid':'1'}]
     async def metadata(*args):return {'bvid':'BV1xx411c7mD','aid':1,'page':1,'title':'科学话题','description':'讨论','up_uid':'1','url':'https://www.bilibili.com/video/BV1xx411c7mD','duration':9999}

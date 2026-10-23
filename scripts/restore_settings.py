@@ -6,6 +6,10 @@ def adapt_settings(settings,source):
     tree=ast.parse(source)
     cls=next(x for x in tree.body if isinstance(x,ast.ClassDef) and x.name=='Settings')
     allowed={x.target.id for x in cls.body if isinstance(x,ast.AnnAssign) and isinstance(x.target,ast.Name)}
+    settings=dict(settings)
+    if 'video_understanding_mode' in settings and 'enable_frames' in allowed:
+        selection=settings['video_understanding_mode']
+        settings.update(enable_frames=selection=='frames',enable_video_model=selection=='video',enable_audio_model=selection=='audio')
     if 'mode' not in allowed:
         return {k:v for k,v in settings.items() if k in allowed}
     if 'mode' in settings:

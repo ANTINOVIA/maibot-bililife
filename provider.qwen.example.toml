@@ -1,0 +1,20 @@
+# 在“模型 → 新增独立模型”或对应条目的 TOML 编辑入口保存。
+# 地区、服务地址和模型 ID 以你的阿里云百炼账号实际可用项为准。
+id = "custom_qwen_video"
+name = "Qwen 视频理解"
+source = "custom"
+protocol = "qwen_compatible"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+model = "替换为支持视频输入的模型ID"
+capabilities = ["video"]
+video_has_audio = false
+video_fps = 1.0
+video_max_frames = 16
+qwen_disable_thinking = true
+api_key = "替换为你的APIKey"
+
+# 原生接口时改为：
+# protocol = "dashscope"
+# base_url = "https://dashscope.aliyuncs.com/api/v1"
+# video_max_frames 仅在原生协议下生效；兼容协议使用 video_fps。
+# 保存后将“直接视频理解”选择为此模型；在浏览模块选择 video 理解方式。

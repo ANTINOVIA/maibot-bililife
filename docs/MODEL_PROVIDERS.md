@@ -1,4 +1,4 @@
-# 模型选择与独立提供商（0.2.5）
+# 模型选择与独立提供商（0.2.6）
 
 每个用途的下拉框直接列出当前 MaiBot 已配置的模型。选择后保存即可，不再需要新增
 “继承条目”，也没有“沿用 SDK 角色”的选项。旧继承条目只作为升级兼容数据保留。
@@ -18,8 +18,10 @@ SDK 2.16 仅提供角色列表，完整目录由后端只读解析已核实实�
   不需要改 MaiBot 的模型配置。允许配置多项，同一服务商的不同模型可分别添加。
 
 五个角色独立选择：文本与规划、关键帧视觉、ASR 转录、直接音频理解、直接视频理解。
-页面显示实际选中的宿主模型；无已配置 ASR、音频或视频模型时关闭。选择路由后，还须在“浏览与理解”启用对应
-媒体处理开关。ASR 是转录，不能当作模型已经听过音乐；直接音频输入与转录分开显示。
+页面显示实际选中的宿主模型；无已配置 ASR、音频或视频模型时关闭。选择路由后，还须在“浏览与理解”选择
+理解方式：`frames`（关键帧）、`video`（视频片段）、`audio`（音频片段）、`subtitle`（字幕与元数据）。
+只执行所选媒体路径，ASR 可额外补充转录。ASR 是转录，不能当作模型已经听过音乐。
+旧媒体开关在启动时迁移为单选方式，优先保留原来实际执行的视频、音频、抽帧路径。
 
 密钥保存在插件后端 `model-secrets.json`（0600、父目录0700）。公开设置文件
 `model-routing.json` 只保存模型与路由，不保存密钥。密钥留空保留旧值；更换服务地址时
@@ -31,9 +33,22 @@ SDK 2.16 仅提供角色列表，完整目录由后端只读解析已核实实�
 - `openai_compatible`：文本/图片通过 `/chat/completions`；ASR 通过
   multipart `/audio/transcriptions`；直接音频为 `input_audio`，视频为 `video_url`
   的 Base64 Data URL。音视频字段是部分兼容服务的扩展，普通文本模型不因此获得媒体能力。
+- `qwen_compatible`：使用 Qwen / 阿里云兼容 `/chat/completions`，视频为 Data URL，
+  在视频内容项附加 `fps`（0.1～10）。默认发送 `enable_thinking=false`，避免要求流式返回的思考模式
+  阻碍当前非流式理解；若服务不接受此参数，可关闭“禁用思考模式”。Base URL 使用兼容地址，
+  例如 `https://dashscope.aliyuncs.com/compatible-mode/v1`。不同地区需使用对应服务地址与密钥。
+- `dashscope`：阿里云原生多模态 `/services/aigc/multimodal-generation/generation`，
+  Base URL 使用 `https://dashscope.aliyuncs.com/api/v1` 等实际原生地址。
+  使用 `input.messages`、`parameters`，支持视频 FPS 和 `max_frames`（1～64）。
+  兼容接口不发送原生专用的 `max_frames`。从 MaiBot 选择模型时，仅对已知阿里云域名进行同域路径转换；
+  代理地址不能自动猜测原生路径，可选择 Qwen 兼容协议或配置独立原生条目。
 - `gemini`：原生 `generateContent`、`inline_data` 与独立 system instruction；
   Base URL 应包含服务实际 API 前缀，例如 `https://generativelanguage.googleapis.com/v1beta`。
   此路由支持直接音频/视频理解，不把它伪装为 multipart ASR。
+
+宿主模型的音视频协议在对应角色卡片设置，独立模型的协议在其编辑入口设置，两者不混用。
+Qwen-VL 等视觉模型的视频能力不代表它能理解音轨；仅当实际模型支持音频时声明 `audio`
+并启用视频音轨。Qwen 专用协议用于内容理解，ASR 请另选转录接口。
 
 直接视频不会把 B 站 Cookie 或带签名的播放 URL发给模型提供商：后端合法下载可访问媒体，
 FFmpeg 生成最多120秒、最多8MiB的片段后提交。默认90秒，画面压到480宽。
@@ -44,6 +59,7 @@ FFmpeg 生成最多120秒、最多8MiB的片段后提交。默认90秒，画面�
 浏览时长、下载量或每日模型/Token额度；服务商仍可能产生费用。
 文本使用最小请求，视觉使用合成图片，ASR/音频使用合成短音频，视频使用合成短视频，
 无需先浏览视频。检查只证明对应接口能响应，不证明真实内容的理解质量。
+视频诊断使用 4 秒合成短片，避免低于 Qwen 视频文件至少 2 秒的输入要求。
 
 成功显示请求往返延迟 `latency_ms`；失败显示 `error_code`、可获得的 `http_status` 和脱敏原因。
 例如 `HTTP_401`、`HTTP_429`、`TIMEOUT`、`CONNECT_ERROR`、`TLS_ERROR`、`MODEL_DISABLED`、
@@ -57,7 +73,9 @@ FFmpeg 生成最多120秒、最多8MiB的片段后提交。默认90秒，画面�
 协议依据：
 
 - [OpenAI 官方转录接口](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)
-- [阿里云兼容 Chat 接口及音视频扩展](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-chat-completions)
+- [阿里云 Qwen 兼容接口](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)
+- [阿里云原生接口](https://help.aliyun.com/zh/model-studio/qwen-api-via-dashscope)
+- [Qwen 视觉与视频输入](https://help.aliyun.com/zh/model-studio/vision)
 - [Gemini 官方视频输入文档](https://ai.google.dev/gemini-api/docs/generate-content/video-understanding)
 
 接口形状已按官方文档实现；某个账号、地区、模型是否有权使用，必须以实际连接测试为准。
