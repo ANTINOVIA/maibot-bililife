@@ -37,6 +37,8 @@ class Storage:
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(2,?)", (time.time(),))
             db.executescript((Path(__file__).parent / "migrations/003_autonomous_life.sql").read_text(encoding="utf-8"))
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(3,?)", (time.time(),))
+            db.executescript((Path(__file__).parent / "migrations/004_comment_reading.sql").read_text(encoding="utf-8"))
+            db.execute("INSERT OR IGNORE INTO schema_version VALUES(4,?)", (time.time(),))
         self.path.chmod(0o600)
         self.lock_file = None
 
@@ -96,6 +98,16 @@ class Storage:
     def set(self, key, value):
         self.execute("INSERT INTO kv VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, dump(value)))
 
+    def update_model_test(self,role,entry):
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute("SELECT value FROM kv WHERE key='model_provider_tests'").fetchone()
+            state=json.loads(row[0]) if row else {}
+            old=state.get(role,{})
+            if entry['state']=='queued' and old.get('task_id')==entry.get('task_id') and old.get('state')!='queued':return
+            state[role]=entry
+            db.execute("INSERT INTO kv VALUES('model_provider_tests',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(dump(state),))
+
     def audit(self, kind, data):
         self.execute("INSERT INTO audit(kind,data,created) VALUES(?,?,?)", (kind, dump(redact(data)), time.time()))
 
@@ -148,13 +160,14 @@ class Storage:
             db.execute("UPDATE tasks SET state=CASE WHEN cancel_requested=1 THEN 'cancelled' WHEN type='publish' THEN 'unknown' WHEN deadline<=? THEN 'expired' ELSE 'queued' END,owner=NULL,lease_until=NULL,updated=? WHERE state='running'", (now, now))
             db.execute("UPDATE attempts SET finished=?,outcome='interrupted' WHERE finished IS NULL", (now,))
             db.execute("UPDATE adaptive_decisions SET state='interrupted' WHERE state='requesting'")
+            db.execute("UPDATE comment_reads SET state='failed',reason='上次进程中断，等待任务恢复' WHERE state='reading'")
 
     def claim(self, owner, paused=False, active=True):
         now = time.time()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("UPDATE tasks SET state='expired',updated=? WHERE state IN ('queued','retry') AND deadline<=?", (now, now))
-            candidates = db.execute("SELECT * FROM tasks WHERE state IN ('queued','retry') AND cancel_requested=0 AND earliest<=? AND next_run<=? AND deadline>? AND (?=0 OR type IN ('login','account','reconcile','model_test')) AND (?=1 OR type NOT IN ('discover','watch','explore','publish','replies')) ORDER BY CASE type WHEN 'reconcile' THEN 0 WHEN 'account' THEN 1 ELSE 2 END,earliest,created LIMIT 100", (now, now, now, int(paused), int(active))).fetchall()
+            candidates = db.execute("SELECT * FROM tasks WHERE state IN ('queued','retry') AND cancel_requested=0 AND earliest<=? AND next_run<=? AND deadline>? AND (?=0 OR type IN ('login','account','reconcile','model_test')) AND (?=1 OR type NOT IN ('discover','watch','explore','read_comments','publish','replies')) ORDER BY CASE type WHEN 'reconcile' THEN 0 WHEN 'account' THEN 1 WHEN 'model_test' THEN 1 ELSE 2 END,earliest,created LIMIT 100", (now, now, now, int(paused), int(active))).fetchall()
             for row in candidates:
                 dependencies = json.loads(row["dependencies"])
                 if dependencies:

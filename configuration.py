@@ -30,6 +30,8 @@ class Settings(BaseModel):
     owner_uid: str = ""
     mention_owner: bool = True
     max_videos: int = 4
+    max_comment_sessions: int = 4
+    max_comments_read: int = 12
     max_video_seconds: int = 900
     max_browse_seconds: int = 2400
     max_comments: int = 1
@@ -85,7 +87,7 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
-        bounds = {"max_dynamic_tasks": (0, 10), "max_videos": (0, 20), "max_video_seconds": (30, 7200), "max_browse_seconds": (60, 14400),
+        bounds = {"max_comment_sessions": (0,20), "max_comments_read": (1,20), "max_dynamic_tasks": (0, 10), "max_videos": (0, 20), "max_video_seconds": (30, 7200), "max_browse_seconds": (60, 14400),
                   "max_comments": (0, 10), "max_replies": (0, 20), "max_per_video": (1, 3),
                   "max_thread_rounds": (1, 5), "cooldown_seconds": (60, 86400),
                   "user_cooldown_seconds": (60, 604800), "reply_interval_seconds": (900, 86400),
@@ -112,9 +114,9 @@ class Settings(BaseModel):
             self.auto_publish_replies = False
         if (self.auto_publish_comments or self.auto_publish_replies) and not (self.allowed_topics or self.allowed_uploaders):
             raise ValueError("自动发布需要至少设置兴趣主题或 UP 主范围")
-        if len(self.prompt_overrides) > 11 or any(len(v) > 2000 for v in self.prompt_overrides.values()):
+        if len(self.prompt_overrides) > 12 or any(len(v) > 2000 for v in self.prompt_overrides.values()):
             raise ValueError("提示词补充过长")
-        if set(self.prompt_overrides) - {"plan", "discover", "adapt", "select", "understand", "decide", "comment", "reply", "memory", "evolution", "review"}:
+        if set(self.prompt_overrides) - {"plan", "discover", "adapt", "read_comments", "select", "understand", "decide", "comment", "reply", "memory", "evolution", "review"}:
             raise ValueError("提示词补充含未知阶段")
         return self
 

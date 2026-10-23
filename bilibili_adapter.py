@@ -141,11 +141,11 @@ class BilibiliAdapter(BiliClient):
                 matches.append(str(row["rpid"]))
         return matches[0] if len(matches) == 1 else None
 
-    async def comment_context(self, aid, root=""):
+    async def comment_context(self, aid, root="", limit=8):
         payload=await self.thread(aid,root)
         rows=payload.get("replies") or []
         return [{"rpid":str(row.get("rpid","")),"text":str((row.get("content") or {}).get("message",""))[:500],
-                 "author_uid":str((row.get("member") or {}).get("mid",""))} for row in rows[:8]]
+                 "author_uid":str((row.get("member") or {}).get("mid",""))} for row in rows[:max(1,min(20,limit))]]
 
     async def owner_mention(self, text, owner_uid):
         self.check()

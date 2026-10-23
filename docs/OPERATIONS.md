@@ -56,7 +56,7 @@ WebUI 运行日志页“备份数据库”使用 SQLite online backup，能一�
 `model-secrets.json`（存在时）；不要把这些私有备份上传到源码仓库或发到本地验收报告。
 WebUI 数据库备份只附带不含密钥的模型路由快照。
 
-迁移由 `migrations/001_initial.sql`、`002_module_controls.sql`、`003_autonomous_life.sql` 和 `schema_version` 管理。升级前留快照；
+迁移由 `migrations/001_initial.sql`、`002_module_controls.sql`、`003_autonomous_life.sql`、`004_comment_reading.sql` 和 `schema_version` 管理。升级前留快照；
 本版本不修改宿主数据表。未来破坏性迁移必须提供向前兼容方案或停机恢复说明。
 
 源码回滚默认保留当前数据库，防止丢失远端已成功或未知的发布记录。
@@ -102,3 +102,9 @@ WebUI 数据库备份只附带不含密钥的模型路由快照。
 保留 `data_dir` 和备份以便恢复、审计和去重；移走本插件源码目录即可。
 不删除其他插件、不修改宿主配置、数据表或 systemd 服务。若将来永久清除经历，
 先处理未知发布；避免重新安装后丢失平台已有发言的去重记录。
+
+## 同版本修复：模型诊断与只读评论
+
+应用版本仍为0.2.6，数据库迁移到版本4。模型诊断独立于生活资源预算；
+只读评论任务为 `read_comments`，使用单独阅读次数上限，仍受日常模型预算与活跃时段约束。
+评论经历保存在 `comment_reads`，不会被标记为视频观看，也不会自动生成视频评论草稿。

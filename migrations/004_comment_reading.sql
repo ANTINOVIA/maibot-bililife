@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS comment_reads(id TEXT PRIMARY KEY, day TEXT NOT NULL, bvid TEXT NOT NULL, metadata TEXT NOT NULL, comments TEXT NOT NULL, analysis TEXT NOT NULL DEFAULT '{}', state TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', created REAL NOT NULL, UNIQUE(day,bvid));

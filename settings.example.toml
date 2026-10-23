@@ -17,6 +17,8 @@ max_retries = 2
 [browse]
 browsing_enabled = true
 max_videos = 4
+max_comment_sessions = 4
+max_comments_read = 12
 max_video_seconds = 900
 max_browse_seconds = 2400
 allowed_topics = ["科学", "技术", "日常生活"]

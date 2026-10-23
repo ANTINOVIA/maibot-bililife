@@ -27,7 +27,7 @@ flowchart LR
 | 模块 | 功能 | 可调整内容 |
 | --- | --- | --- |
 | 每日安排 | 24 小时钟面与时段环、任务详情、重新生成、自主追加、插入与删除日程 | 时区、计划时间、活跃时段、超时与重试 |
-| 浏览与理解 | 自主选题与搜索、UP 主内容、浏览和跳过记录 | 每日浏览量、时长、主题范围、媒体处理方式 |
+| 浏览与理解 | 自主选题与搜索、只读评论、UP 主内容、浏览和跳过记录 | 每日浏览量、时长、主题范围、媒体处理方式 |
 | 评论与回复 | 草稿编辑、手动或自动发布、相关评论线程跟进、发布状态核对 | 评论与回复独立开关、每日额度、冷却、最大轮数 |
 | 经历记忆 | 带来源的经历保存、检索、编辑、纠错与遗忘 | 记忆开关、召回数量、上下文长度 |
 | 兴趣与人格 | 兴趣权重、人工干预、冻结维度、变更历史与回滚 | 自动兴趣变化、人格补充说明、表达偏好 |
@@ -67,7 +67,7 @@ flowchart LR
 
 ### 安装与首次配置
 
-1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载 `maibot-bililife-0.2.6.zip`，并核对同页的 SHA256 文件。
+1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载同版本修复附件 `maibot-bililife-0.2.6-hotfix.zip`，并核对同页的 SHA256 文件。
 2. 在 MaiBot WebUI 的插件管理中导入安装包并启用。
 3. 打开 BiliLife 的**设置总览**，生成二维码，使用 B 站客户端完成独立扫码登录。
 4. 打开**模型**，选择文本模型；需要画面理解时，再选择视觉模型。
@@ -101,6 +101,8 @@ max_retries = 2
 [browse]
 browsing_enabled = true
 max_videos = 4
+max_comment_sessions = 4
+max_comments_read = 12
 max_video_seconds = 900
 max_browse_seconds = 2400
 allowed_topics = ["科学", "技术", "日常生活"]
@@ -122,6 +124,8 @@ daily_download_mb = 120
 - 删除任务会取消并隐藏，恢复显示不会重新执行已取消的任务。
 - 开启 `adaptive_schedule_enabled` 后，麦麦可根据刚完成的理解决定追加任务，也可不追加；每日最多 `max_dynamic_tasks` 项，任务在钟面标记为“麦麦自主追加”。
 - 调度按顺序执行，界面不再提供固定为 1 的并发数选项。
+
+可选择 `read_comments` 日程，只阅读兴趣主题下的评论区，不取得字幕、音频或画面。每日最多 `max_comment_sessions` 次，每次最多 `max_comments_read` 条。评论摘要、原文引用和来源单独保存，标明未观看视频，不据此生成视频评论。
 
 ### 2. 模型选择与独立提供商
 
@@ -164,6 +168,8 @@ api_key = "替换为你的APIKey"
 保存后，在对应用途的下拉框选择该条目。`api.example.com` 是格式占位地址，需换成实际服务地址。提供商 TOML 应通过专用入口提交，密钥不填写到普通 `settings.toml`。
 
 支持 `openai_compatible` 和原生 `gemini` 协议。输入能力须由服务本身支持；为条目勾选音频或视频不会改变模型能力。原生 Gemini 用于音视频理解，ASR 使用转录接口。模型选定后，还需在**浏览与理解**启用相应处理开关。
+
+连接检查与日常生活额度独立，使用最小文本或合成媒体请求。成功显示请求往返延迟（ms），失败显示 HTTP 或本地错误码；检查本身仍可能产生服务商费用。
 
 配置文件参考：[模型路由](model-routing.example.toml) · [独立提供商](provider.example.toml)。
 

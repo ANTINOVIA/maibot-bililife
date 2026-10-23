@@ -30,11 +30,12 @@ class DailyPlanner:
         pending = await self.store.call("rows", "SELECT type,state,payload,error FROM tasks WHERE day<? AND state NOT IN ('succeeded','cancelled','skipped') ORDER BY created DESC LIMIT 8", (day,))
         interactions = await self.store.call("rows", "SELECT kind,state,video_id,text FROM operations ORDER BY created DESC LIMIT 8")
         budget = await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (day,))
-        manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','rest','memory','review','draft','replies') ORDER BY earliest LIMIT 10",(day,))
+        manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies') ORDER BY earliest LIMIT 10",(day,))
         external = {"date": day, "now": now.isoformat(), "timezone": cfg.timezone,
                     "settings": cfg.model_dump(exclude={"prompt_overrides","owner_uid"}), "interests": interests,
                     "recent": recent, "summaries": summaries, "unfinished": pending, "interactions": interactions,
                     "manual_schedule":manual,"budget_usage": budget, "account": self.engine.account_status, "health": self.engine.health}
+        external['recent_comment_reading']=await self.store.call('rows',"SELECT bvid,state,json_extract(analysis,'$.summary') AS summary FROM comment_reads ORDER BY created DESC LIMIT 4")
         degraded = ""
         proposal = None
         try:
@@ -99,6 +100,10 @@ class DailyPlanner:
                     added=sum(t['payload']['max_items'] for t in tasks if t['type'] in ('discover','explore'))
                     if added and budget.get('videos',0)+reserved+added>cfg.max_videos:
                         raise ValueError("剩余浏览额度不足，已有日程优先")
+                    comments_reserved=db.execute("SELECT COUNT(*) FROM tasks WHERE day=? AND type='read_comments' AND state IN ('queued','retry')",(day,)).fetchone()[0]
+                    comment_added=sum(task['type']=='read_comments' for task in tasks)
+                    if comment_added and budget.get('comment_sessions',0)+comments_reserved+comment_added>cfg.max_comment_sessions:
+                        raise ValueError('剩余只读评论额度不足，已有日程优先')
                     for task in tasks:
                         db.execute("INSERT INTO tasks(id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,'queued',?,?,?,?,?,?,?,?)",
                                    (task['id'],day,task['type'],dump({**task['payload'],'origin':'agent','source_video_id':video_id}),task['earliest'],task['deadline'],task['earliest'],task['duration'],dump(task['dependencies']),time.time(),time.time()))
@@ -115,7 +120,7 @@ class DailyPlanner:
 
     def validate(self, proposal, now):
         cfg, tasks, ids = self.engine.config(), [], [uid() for _ in proposal.tasks]
-        total_items, total_duration = 0, 0
+        total_items, total_duration, comment_sessions = 0, 0, 0
         for index, item in enumerate(proposal.tasks):
             try:
                 self.engine.check_module(item.type)
@@ -130,21 +135,24 @@ class DailyPlanner:
             if item.type not in ("rest", "memory", "review"):
                 if not self.engine.active(start) or not self.engine.active(end):
                     raise ValueError("任务超出允许活跃时段")
-                if item.type in ("discover", "explore"):
+                if item.type in ("discover", "explore", "read_comments"):
                     if item.query:
                         try:
                             self.engine.validate_query(item.query)
                         except RuntimeError:
                             raise ValueError("计划检索词超出允许主题") from None
-                    total_items += item.max_items
+                    if item.type=='read_comments':
+                        comment_sessions+=1
+                    else:
+                        total_items += item.max_items
                 if item.type == "watch":
                     from .bilibili_adapter import parse_video
                     parse_video(item.query)
                     total_items += 1
-                total_duration += item.max_duration_seconds
+                if item.type!='read_comments':total_duration += item.max_duration_seconds
             tasks.append({"id": ids[index], "type": item.type, "earliest": max(start.timestamp(), time.time()), "deadline": end.timestamp(),
                           "duration": min(item.max_duration_seconds, cfg.task_timeout_seconds),
                           "dependencies": [ids[x] for x in item.depends_on], "payload": item.model_dump()})
-        if total_items > cfg.max_videos or total_duration > cfg.max_browse_seconds:
+        if total_items > cfg.max_videos or total_duration > cfg.max_browse_seconds or comment_sessions>cfg.max_comment_sessions:
             raise ValueError("计划超过每日数量或时间预算")
         return tasks

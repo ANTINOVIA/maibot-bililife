@@ -8,11 +8,11 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-TaskType = Literal["discover", "watch", "explore", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan"]
+TaskType = Literal["discover", "watch", "explore", "read_comments", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan"]
 
 
 class ProposedTask(Strict):
-    type: Literal["discover", "explore", "draft", "replies", "memory", "review", "rest"]
+    type: Literal["discover", "explore", "read_comments", "draft", "replies", "memory", "review", "rest"]
     earliest_start: str
     deadline: str
     goal: str = Field(min_length=1, max_length=200)
@@ -49,6 +49,20 @@ class Selection(Strict):
     browse: bool
     reason: str = Field(max_length=300)
     topic: str = Field(max_length=80)
+
+
+class CommentPoint(Strict):
+    rpid: str = Field(max_length=30)
+    quote: str = Field(min_length=1,max_length=300)
+    interpretation: str = Field(max_length=300)
+
+
+class CommentUnderstanding(Strict):
+    summary: str = Field(max_length=1200)
+    points: List[CommentPoint] = Field(max_length=8)
+    feeling: str = Field(max_length=300)
+    questions: List[str] = Field(max_length=5)
+    uncertainty: str = Field(max_length=400)
 
 
 class Detail(Strict):

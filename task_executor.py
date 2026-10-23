@@ -16,6 +16,8 @@ from .bilibili_adapter import BilibiliAdapter, parse_video
 from .configuration import Settings, migrate_settings
 from .config_io import parse_settings_document, write_settings_file
 from .daily_planner import DailyPlanner
+from .comment_reading import CommentReading
+from .model_diagnostics import check_model, DiagnosticError
 from .interaction_service import InteractionService, PolicyBlocked
 from .maibot_adapter import MaiBotAdapter, ModelUnavailable
 from .memory_bridge import MemoryBridge, PersonaEvolution
@@ -78,6 +80,7 @@ class TaskExecutor:
         self.evolution = PersonaEvolution(self.store, self.host, self.config)
         self.interaction = InteractionService(self)
         self.planner = DailyPlanner(self)
+        self.comment_reading = CommentReading(self)
 
     def config(self):
         return self.settings
@@ -123,12 +126,12 @@ class TaskExecutor:
             control = self.current["type"] in ("account", "login", "reconcile", "model_test")
             if self.paused and not control:
                 raise TaskCancelled("全部任务已暂停")
-            if self.blocked and self.current["type"] in ("watch", "discover", "explore", "publish", "replies"):
+            if self.blocked and self.current["type"] in ("watch", "discover", "explore", "read_comments", "publish", "replies"):
                 raise PolicyBlocked(self.blocked)
             self.check_module(self.current["type"])
 
     def check_module(self, kind):
-        field={"discover":"browsing_enabled","explore":"browsing_enabled","watch":"browsing_enabled",
+        field={"discover":"browsing_enabled","explore":"browsing_enabled","watch":"browsing_enabled","read_comments":"browsing_enabled",
                "draft":"comments_enabled","replies":"replies_enabled","memory":"memory_enabled","review":"review_enabled","adapt":"adaptive_schedule_enabled"}.get(kind)
         if field and not getattr(self.settings,field):
             raise PolicyBlocked("此模块已关闭")
@@ -155,12 +158,12 @@ class TaskExecutor:
 
     async def enqueue(self, kind, payload, duration=None, earliest=None, deadline=None, dependencies=None, child=False):
         # 入队的数据只来自受控 API 或程序，不接受任意脚本、URL 请求或 shell。
-        allowed = {"discover", "watch", "explore", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "adapt", "model_test"}
+        allowed = {"discover", "watch", "explore", "read_comments", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "adapt", "model_test"}
         if kind not in allowed:
             raise ValueError("未知任务类型")
         if len(dump(payload)) > 12000:
             raise ValueError("任务参数过大")
-        if kind in ("discover", "explore"):
+        if kind in ("discover", "explore", "read_comments"):
             if payload.get("query") and not payload.get("uploader") and not payload.get("recommended"):
                 self.validate_query(payload.get("query", ""))
             elif payload.get("uploader") and payload["uploader"] not in self.settings.allowed_uploaders:
@@ -204,7 +207,7 @@ class TaskExecutor:
                 await self.schedule()
                 task = await self.store.call("claim", self.owner, self.paused, self.active())
                 if task:
-                    if (self.paused and task["type"] not in ("login", "account", "reconcile", "model_test")) or (not self.active() and task["type"] in ("discover", "watch", "explore", "publish", "replies")):
+                    if (self.paused and task["type"] not in ("login", "account", "reconcile", "model_test")) or (not self.active() and task["type"] in ("discover", "watch", "explore", "read_comments", "publish", "replies")):
                         await self.store.call("finish", task, "retry", error="暂停或休息时段", next_run=time.time() + 60)
                     else:
                         await self.run(task)
@@ -221,7 +224,7 @@ class TaskExecutor:
         try:
             self.check()
             size = await asyncio.to_thread(lambda: sum(p.stat().st_size for p in [*self.data.glob("*.sqlite3*"), *self.runtime.glob("*")] if p.is_file()))
-            if size > self.settings.max_storage_mb * 1024**2 and task["type"] not in ("account", "login", "reconcile", "rest"):
+            if size > self.settings.max_storage_mb * 1024**2 and task["type"] not in ("account", "login", "reconcile", "rest", "model_test"):
                 raise BudgetExceeded("插件存储额度耗尽")
             timeout = min(task["duration"], max(1, task["deadline"] - time.time()))
             self.running_job = asyncio.create_task(self.dispatch(task["type"], json.loads(task["payload"])))
@@ -247,6 +250,8 @@ class TaskExecutor:
             await self.store.call("finish", task, "blocked_login" if restricted else "failed", error=str(exc))
         except PolicyBlocked as exc:
             await self.store.call("finish", task, "blocked_policy", error=str(exc))
+        except DiagnosticError as exc:
+            await self.store.call("finish", task, "failed", error=exc.code+'：'+str(exc))
         except ModelUnavailable as exc:
             await self.store.call("finish", task, "blocked_model", error=str(exc))
         except (VideoReadError, httpx.TransportError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
@@ -279,6 +284,8 @@ class TaskExecutor:
             return {"rested": True, "reason": payload.get("reason", "计划休息")}
         if kind == "model_test":
             return await self.model_test(payload["role"])
+        if kind == "read_comments":
+            return await self.comment_reading.read(payload)
         if kind == "account":
             if self.platform.credential is None:
                 self.account_status = {"state": "not_logged_in", "uid": "", "name": ""}
@@ -323,54 +330,7 @@ class TaskExecutor:
         raise ValueError("未知任务类型")
 
     async def model_test(self, role):
-        from .model_router import ROLES
-        from .media_processor import MediaProcessor
-        from .schemas import Understanding
-        if role not in ROLES:
-            raise ValueError("未知模型角色")
-        tests = await self.store.call("get", "model_provider_tests", {})
-        revision = self.host.router.state.get("revision",0)
-        target = self.host.router.state["routes"][role]
-        tests[role] = {"state": "running", "target": target, "task_id": self.current["id"] if self.current else "", "updated": time.time()}
-        await self.store.call("set", "model_provider_tests", tests)
-        try:
-            if role in ("text", "vision"):
-                images = None
-                if role == "vision":
-                    from io import BytesIO
-                    from PIL import Image
-                    def sample():
-                        buffer = BytesIO()
-                        Image.new("RGB",(64,64),(30,180,80)).save(buffer,format="PNG")
-                        return "data:image/png;base64,"+base64.b64encode(buffer.getvalue()).decode()
-                    images = [await asyncio.to_thread(sample)]
-                result = await self.host.generate("select", {"purpose": "真实提供商连接测试，非浏览任务。browse=false，reason简述收到的输入；如有图像，说明主要颜色。topic填测试。", "allowed_topics": ["测试"]}, Selection, images)
-                details = {"result": result.model_dump(), "input": "合成绿色测试图" if images else "测试文本", "note": "验证请求与结构化响应，不代表推理质量验收"}
-            else:
-                rows = await self.store.call("rows", "SELECT payload FROM videos WHERE state='understood' ORDER BY created DESC LIMIT 1")
-                if not rows:
-                    raise ValueError("请先读取一个真实视频，媒体测试将使用其受限片段")
-                metadata = json.loads(rows[0]["payload"])
-                await self.store.call("reserve", self.day(), {"videos": (1,self.settings.max_videos),
-                                      "browse_seconds": (min(metadata["duration"],self.settings.segment_seconds,120,self.settings.max_video_seconds),self.settings.max_browse_seconds)})
-                evidence = {"types": ["metadata"], "segments": [], "frames": [], "limitations": [], "coverage": "模型能力测试", "complete": False}
-                cfg = self.settings.model_copy(update={"enable_frames":False,"enable_asr":role=="asr","enable_audio_model":role=="audio","enable_video_model":role=="video"})
-                processor = MediaProcessor(self.platform,self.host,lambda:cfg,self.runtime,self.understanding.ffmpeg)
-                images, media = await processor.collect(metadata,evidence,"provider-test-"+uid())
-                if role == "asr":
-                    details = {"input":metadata["url"],"transcript_chars":sum(len(x["text"]) for x in evidence["segments"]),"coverage":evidence["coverage"]}
-                else:
-                    result = await self.host.generate("understand", {"metadata":metadata,"evidence":evidence}, Understanding, images, media)
-                    details = {"input":metadata["url"],"summary":result.summary[:500],"coverage":evidence["coverage"]}
-            if revision != self.host.router.state.get("revision",0):
-                raise PolicyBlocked("测试期间模型配置发生变化，请按新配置重新测试")
-            tests[role].update(state="succeeded",revision=revision,updated=time.time(),details=details)
-            await self.store.call("set", "model_provider_tests", tests)
-            return {"role":role,**tests[role]}
-        except BaseException as exc:
-            tests[role].update(state="cancelled" if isinstance(exc,asyncio.CancelledError) else "failed",error=type(exc).__name__,updated=time.time())
-            await asyncio.shield(self.store.call("set", "model_provider_tests", tests))
-            raise
+        return await check_model(self,role)
 
     async def resolve_video(self, payload):
         if payload.get("video_id"):
@@ -472,6 +432,7 @@ class TaskExecutor:
             data[key] = await self.store.call("rows", sql + " LIMIT 50", (start, start) if key == "memories" else (start,))
         # 跨日读取保留原任务归属，但复盘按实际成功完成日纳入视频，不能漏掉午夜完成的理解。
         data["videos"] = await self.store.call("rows", "SELECT * FROM videos WHERE created>=? OR id IN (SELECT json_extract(result,'$.video_id') FROM tasks WHERE type='watch' AND state='succeeded' AND updated>=?) LIMIT 50", (start,start))
+        data["comment_reading"] = await self.store.call("rows", "SELECT * FROM comment_reads WHERE created>=? LIMIT 30", (start,))
         data["budget"] = await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (day,))
         records = [{"id": x["id"], "bvid": x["bvid"], "analysis": json.loads(x["analysis"]), "url": json.loads(x["payload"])["url"]} for x in data["videos"] if x["state"] == "understood"]
         data["interest_changes"] = await self.evolution.evolve(day, records)
@@ -480,6 +441,8 @@ class TaskExecutor:
                                          "source": json.loads(row["payload"])["url"], "analysis": json.loads(row["analysis"]),
                                          "coverage": json.loads(row["evidence"]).get("coverage", "尚未理解")} for row in data["videos"]],
                       "tasks": [{"type": row["type"], "state": row["state"], "error": row["error"]} for row in data["tasks"]]}
+        model_data['comment_reading']=[{'id':row['id'],'state':row['state'],'source':json.loads(row['metadata']).get('url'),
+            'coverage':'仅阅读评论，未观看视频','summary':json.loads(row['analysis']).get('summary','')[:800]} for row in data['comment_reading'][:8]]
         evidence = {"types": list({kind for row in data["videos"] for kind in json.loads(row["evidence"]).get("types",[])})}
         validation_error = ""
         for attempt in range(2):
@@ -494,7 +457,7 @@ class TaskExecutor:
                     # 模型反复作出无证据判断时，用可核对的执行记录生成保守摘要，保留降级原因。
                     understood = [row for row in data["videos"] if row["state"] == "understood"]
                     published = [row for row in data["interactions"] if row["state"] == "succeeded"]
-                    summary = Review(summary=f"模型复盘证据校验未通过；以下仅汇总执行记录：理解记录 {len(understood)} 条，成功发布 {len(published)} 条，记忆记录 {len(data['memories'])} 条。未执行任务不计为经历。",
+                    summary = Review(summary=f"模型复盘证据校验未通过；以下仅汇总执行记录：理解记录 {len(understood)} 条，只读评论 {sum(row['state']=='understood' for row in data['comment_reading'])} 次，成功发布 {len(published)} 条，记忆记录 {len(data['memories'])} 条。未执行任务不计为经历。",
                                      learned=[json.loads(row["payload"])["url"] + "：" + json.loads(row["evidence"]).get("coverage","未取得内容证据") for row in understood[:8]],
                                      unresolved=["模型复盘未通过证据校验："+validation_error],
                                      tomorrow=["依据未完成任务和资源预算重新规划，不自动补发评论。"])

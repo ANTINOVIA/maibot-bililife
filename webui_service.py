@@ -57,6 +57,7 @@ class WebUIService:
             "schedule": ("tasks", "id,type,state,day,earliest,deadline,attempts,error,payload", "created DESC"),
             "plans": ("plans", "id,day,version,active,reason,created", "created DESC"),
             "browse": ("videos", "id,bvid,page,state,reason,created,json_extract(payload,'$.title') AS title,json_extract(evidence,'$.coverage') AS coverage", "created DESC"),
+            "comment_reads": ("comment_reads", "id,bvid,state,reason,created,json_extract(metadata,'$.title') AS title,json_extract(analysis,'$.summary') AS text", "created DESC"),
             "interactions": ("drafts", "id,video_id,kind,text,status,reason,root,parent,created", "created DESC"),
             "operations": ("operations", "id,draft_id,state,video_id,kind,rpid,error,created", "created DESC"),
             "threads": ("reply_events", "id,state,created", "created DESC"),
@@ -76,6 +77,7 @@ class WebUIService:
 
     async def detail(self, section, record_id):
         mapping = {"schedule": ("tasks", "id"), "plans": ("plans", "id"), "browse": ("videos", "id"),
+                   "comment_reads": ("comment_reads", "id"),
                    "interactions": ("drafts", "id"), "operations": ("operations", "id"), "threads": ("reply_events", "id"),
                    "memories": ("memories", "id"), "changes": ("persona_changes", "id"), "summaries": ("summaries", "day"),"persona_history":("persona_interventions","id")}
         if section not in mapping:
@@ -85,7 +87,7 @@ class WebUIService:
         if not rows:
             raise ValueError("记录不存在")
         row = rows[0]
-        for key in ("payload", "evidence", "analysis", "result", "dependencies", "topics", "sources"):
+        for key in ("payload", "evidence", "analysis", "result", "dependencies", "topics", "sources", "metadata", "comments"):
             if row.get(key):
                 row[key] = json.loads(row[key])
         if section == "browse":
@@ -132,7 +134,15 @@ class WebUIService:
         from .model_router import ROLES
         if role not in ROLES:
             raise ValueError("未知模型角色")
-        return {"ok": True, "task_id": await self.engine.enqueue("model_test", {"role": role})}
+        pending=await self.store.call('rows',"SELECT id FROM tasks WHERE type='model_test' AND json_extract(payload,'$.role')=? AND state IN ('queued','running','retry')",(role,))
+        if pending:return {'ok':True,'task_id':pending[0]['id']}
+        task_id=await self.engine.enqueue('model_test',{'role':role},duration=55)
+        tests=await self.store.call('get','model_provider_tests',{})
+        # 若工作线程已开始，不用排队状态覆盖实际检查结果。
+        if tests.get(role,{}).get('task_id')!=task_id:
+            tests[role]={'state':'queued','task_id':task_id,'updated':time.time(),'budget_scope':'diagnostic'}
+            await self.store.call('update_model_test',role,tests[role])
+        return {"ok": True, "task_id": task_id}
 
     async def save_settings(self, data):
         async with self.settings_lock:
@@ -216,7 +226,7 @@ class WebUIService:
         if not isinstance(payload, dict):
             raise ValueError("任务参数须为 JSON 对象")
         keys = {"watch": {"query"}, "discover": {"query", "max_items", "uploader", "recommended"},
-                "explore": {"query", "max_items"}, "draft": {"video_id"}, "memory": {"video_id"},
+                "explore": {"query", "max_items"}, "read_comments": {"query"}, "draft": {"video_id"}, "memory": {"video_id"},
                 "plan": {"revise", "reason"}, "review": set(), "replies": set(), "account": set(), "login": set(), "reconcile": set(), "rest": {"reason"}}
         if kind not in keys or set(payload) - keys[kind]:
             raise ValueError("任务类型或参数不允许")
@@ -336,7 +346,7 @@ class WebUIService:
         if action!="insert" or set(args)-{"kind","payload","date","start","end","duration","reason"}:
             raise ValueError("日程操作或参数无效")
         kind=args.get("kind")
-        if kind not in ("watch","discover","explore","draft","replies","memory","review","rest"):
+        if kind not in ("watch","discover","explore","read_comments","draft","replies","memory","review","rest"):
             raise ValueError("此任务不能手动安排")
         payload=args.get("payload",{})
         # 使用已有入口验证任务参数，但先检查全部时段，防止校验失败仍留下任务。
@@ -347,7 +357,7 @@ class WebUIService:
         duration=args.get("duration",self.engine.config().task_timeout_seconds)
         if type(duration) is not int or not 10<=duration<=self.engine.config().task_timeout_seconds or end<=start or end.timestamp()<=time.time() or (start.date()-self.engine.now().date()).days not in range(0,8):
             raise ValueError("请选择今后七天内有效时段，执行时限不能超过任务超时")
-        if kind in ("watch","discover","explore","draft","replies") and (not self.engine.active(start) or not self.engine.active(end)):
+        if kind in ("watch","discover","explore","read_comments","draft","replies") and (not self.engine.active(start) or not self.engine.active(end)):
             raise ValueError("此任务时段超出活跃时间")
         # 和即时入口共用精确的参数白名单。
         validated=self.validate_task_payload(kind,payload)
