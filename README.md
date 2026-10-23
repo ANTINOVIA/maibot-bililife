@@ -1,11 +1,11 @@
 # MaiBot BiliLife · 麦麦的 B 站生活
 
-[![Version](https://img.shields.io/badge/version-0.2.6-5865F2)](https://github.com/Sakyurara/maibot-bililife/releases/tag/v0.2.6)
+[![Version](https://img.shields.io/badge/version-0.2.6-5865F2)](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 根据 MaiBot 的人格、兴趣和近期经历安排 B 站生活：自主发现内容，理解视频或只阅读评论，决定是否互动，保存带来源的经历，并在后续对话中检索使用。通过 MaiBot 自带 WebUI 管理，无需独立前端或数据库服务。
 
-本文对应当前 **0.2.6 源码及同版本修复包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
+本文对应当前 **0.2.6 发布源码与安装包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
 
 ## 导航
 
@@ -53,7 +53,7 @@ flowchart LR
 
 适配环境为 **MaiBot 1.3.14 / maibot-plugin-sdk 2.16.0 / Dashboard 1.9.8 / Python 3.12**。清单将宿主与 SDK 限定在上述版本；其他版本需要重新适配。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
 
-1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases/tag/v0.2.6) 下载 `maibot-bililife-0.2.6-hotfix.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。GitHub 的 Source code ZIP 用于源码下载。
+1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
 2. 打开 BiliLife **设置总览**生成二维码，使用 B 站客户端完成独立扫码。
 3. 在**模型**选择文本模型及需要的媒体模型；在**浏览与理解**选择理解方式、兴趣主题与每日额度。
 4. 在**每日安排**生成计划或等待自动生成。日程可包含只读评论，不要求预先指定视频。
