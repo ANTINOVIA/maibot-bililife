@@ -30,7 +30,7 @@ class BiliLifePlugin(MaiBotPlugin):
         except BaseException:
             await self.engine.stop()
             raise
-        self.ctx.logger.info("BiliLife 0.2.5 已加载；各模块独立配置，宿主长期记忆写入接口不受支持")
+        self.ctx.logger.info("BiliLife 0.2.6 已加载；各模块独立配置，宿主长期记忆写入接口不受支持")
 
     async def on_unload(self) -> None:
         if self.engine is not None:

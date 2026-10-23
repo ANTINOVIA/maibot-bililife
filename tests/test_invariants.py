@@ -222,8 +222,8 @@ async def test_evidence_quote_repair_is_bounded(engine):
 
 async def test_manual_draft_explicit_scope_and_evidence(engine):
     seed_video(engine)
-    engine.settings=Settings(allowed_topics=['技术'],allowed_videos=['BV1xx411c7mD'])
-    engine.store.execute("UPDATE videos SET analysis=?",(dump({'context_sufficient':True,'suitable_for_comment':False,'topic':'其他'}),))
+    engine.settings=Settings(allowed_topics=['科学'])
+    engine.store.execute("UPDATE videos SET analysis=?",(dump({'context_sufficient':True,'suitable_for_comment':False,'topic':'科学'}),))
     draft=await WebUIService(engine).manual_draft('v1','管理员指定的测试评论')
     assert draft['draft_id']
     assert engine.store.rows('SELECT text FROM drafts WHERE id=?',(draft['draft_id'],))[0]['text']=='管理员指定的测试评论'

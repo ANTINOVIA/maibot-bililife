@@ -12,7 +12,7 @@ TaskType = Literal["discover", "watch", "explore", "draft", "replies", "memory",
 
 
 class ProposedTask(Strict):
-    type: Literal["discover", "watch", "explore", "draft", "replies", "memory", "review", "rest"]
+    type: Literal["discover", "explore", "draft", "replies", "memory", "review", "rest"]
     earliest_start: str
     deadline: str
     goal: str = Field(min_length=1, max_length=200)
@@ -33,6 +33,16 @@ class ProposedTask(Strict):
 class PlanProposal(Strict):
     theme: str = Field(min_length=1, max_length=120)
     tasks: List[ProposedTask] = Field(min_length=1, max_length=10)
+
+
+class DiscoveryChoice(Strict):
+    query: str = Field(min_length=1, max_length=80)
+    reason: str = Field(max_length=300)
+
+
+class ScheduleAdjustment(Strict):
+    reason: str = Field(max_length=300)
+    tasks: List[ProposedTask] = Field(default_factory=list, max_length=2)
 
 
 class Selection(Strict):

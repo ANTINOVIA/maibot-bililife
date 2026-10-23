@@ -7,7 +7,7 @@ def adapt_settings(settings,source):
     cls=next(x for x in tree.body if isinstance(x,ast.ClassDef) and x.name=='Settings')
     allowed={x.target.id for x in cls.body if isinstance(x,ast.AnnAssign) and isinstance(x.target,ast.Name)}
     if 'mode' not in allowed:
-        return dict(settings)
+        return {k:v for k,v in settings.items() if k in allowed}
     if 'mode' in settings:
         return {k:v for k,v in settings.items() if k in allowed}
     result={k:v for k,v in settings.items() if k in allowed}

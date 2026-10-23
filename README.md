@@ -1,6 +1,6 @@
 # MaiBot BiliLife · 麦麦的 B 站生活
 
-[![Version](https://img.shields.io/badge/version-0.2.5-5865F2)](https://github.com/Sakyurara/maibot-bililife/releases)
+[![Version](https://img.shields.io/badge/version-0.2.6-5865F2)](https://github.com/Sakyurara/maibot-bililife/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **让麦麦拥有持续的 B 站浏览生活。**
@@ -26,8 +26,8 @@ flowchart LR
 
 | 模块 | 功能 | 可调整内容 |
 | --- | --- | --- |
-| 每日安排 | 24 小时钟面与时段环、任务详情、重新生成、插入与删除日程 | 时区、计划时间、活跃时段、超时与重试 |
-| 浏览与理解 | 关键词发现、指定 BV 或视频链接、UP 主内容、浏览和跳过记录 | 每日浏览量、时长、主题范围、媒体处理方式 |
+| 每日安排 | 24 小时钟面与时段环、任务详情、重新生成、自主追加、插入与删除日程 | 时区、计划时间、活跃时段、超时与重试 |
+| 浏览与理解 | 自主选题与搜索、UP 主内容、浏览和跳过记录 | 每日浏览量、时长、主题范围、媒体处理方式 |
 | 评论与回复 | 草稿编辑、手动或自动发布、相关评论线程跟进、发布状态核对 | 评论与回复独立开关、每日额度、冷却、最大轮数 |
 | 经历记忆 | 带来源的经历保存、检索、编辑、纠错与遗忘 | 记忆开关、召回数量、上下文长度 |
 | 兴趣与人格 | 兴趣权重、人工干预、冻结维度、变更历史与回滚 | 自动兴趣变化、人格补充说明、表达偏好 |
@@ -67,7 +67,7 @@ flowchart LR
 
 ### 安装与首次配置
 
-1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载 `maibot-bililife-0.2.5.zip`，并核对同页的 SHA256 文件。
+1. 从 [Releases](https://github.com/Sakyurara/maibot-bililife/releases) 下载 `maibot-bililife-0.2.6.zip`，并核对同页的 SHA256 文件。
 2. 在 MaiBot WebUI 的插件管理中导入安装包并启用。
 3. 打开 BiliLife 的**设置总览**，生成二维码，使用 B 站客户端完成独立扫码登录。
 4. 打开**模型**，选择文本模型；需要画面理解时，再选择视觉模型。
@@ -90,6 +90,8 @@ GitHub 自动生成的 Source code ZIP 用于源码下载，安装请使用 Rele
 [schedule]
 planner_enabled = true
 timezone = "Asia/Shanghai"
+adaptive_schedule_enabled = true
+max_dynamic_tasks = 3
 plan_time = "09:00"
 active_start = "09:00"
 active_end = "22:30"
@@ -104,7 +106,6 @@ max_browse_seconds = 2400
 allowed_topics = ["科学", "技术", "日常生活"]
 excluded_topics = []
 allowed_uploaders = []
-allowed_videos = []
 enable_frames = true
 max_frames = 3
 enable_asr = false
@@ -116,9 +117,11 @@ daily_download_mb = 120
 ```
 
 - 时间使用配置的业务时区；时长单位为秒，下载与存储大小单位为 MiB。
-- `allowed_uploaders` 填数字 UID 字符串，`allowed_videos` 填完整 BV 号。
+- `allowed_uploaders` 填数字 UID 字符串，留空时按兴趣主题发现内容，无需填写视频。
 - 在钟面旁可插入指定时段的任务；重新生成计划会生成新版本，保留历史执行记录。
 - 删除任务会取消并隐藏，恢复显示不会重新执行已取消的任务。
+- 开启 `adaptive_schedule_enabled` 后，麦麦可根据刚完成的理解决定追加任务，也可不追加；每日最多 `max_dynamic_tasks` 项，任务在钟面标记为“麦麦自主追加”。
+- 调度按顺序执行，界面不再提供固定为 1 的并发数选项。
 
 ### 2. 模型选择与独立提供商
 
@@ -170,6 +173,8 @@ api_key = "替换为你的APIKey"
 [comments]
 comments_enabled = true
 auto_publish_comments = false
+owner_uid = ""
+mention_owner = true
 max_comments = 1
 max_per_video = 1
 cooldown_seconds = 3600
@@ -183,9 +188,11 @@ user_cooldown_seconds = 21600
 reply_interval_seconds = 3600
 ```
 
-保留 `auto_publish_* = false` 时，生成的内容进入草稿，可在互动页面编辑和手动发布。需要自动发布时，分别启用评论或回复开关，并设置主题、UP 主或指定视频范围。
+保留 `auto_publish_* = false` 时，生成的内容进入草稿，可在互动页面编辑和手动发布。需要自动发布时，分别启用评论或回复开关，并设置兴趣主题或 UP 主范围；启用后符合规则的发言直接执行，无需逐条确认。
 
 所有发布入口共用账号状态、范围、上下文、额度、冷却和去重检查。回复默认只跟进本账号已发布评论及其相关线程；无新增信息时可以结束对话。请求结果未知时保留“待核对”状态，不直接重复提交。
+
+填写 `owner_uid`（主人的数字 B 站 UID）后，`mention_owner = true` 会在视频评论中追加对主人的真实提及；留空时不提醒。回复链不重复追加主人提及。
 
 ### 4. 记忆、兴趣与复盘
 

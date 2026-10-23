@@ -35,6 +35,8 @@ class Storage:
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(1,?)", (time.time(),))
             db.executescript((Path(__file__).parent / "migrations/002_module_controls.sql").read_text(encoding="utf-8"))
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(2,?)", (time.time(),))
+            db.executescript((Path(__file__).parent / "migrations/003_autonomous_life.sql").read_text(encoding="utf-8"))
+            db.execute("INSERT OR IGNORE INTO schema_version VALUES(3,?)", (time.time(),))
         self.path.chmod(0o600)
         self.lock_file = None
 
@@ -145,6 +147,7 @@ class Storage:
             db.execute("UPDATE operations SET state='unknown',error='进程中断，等待核对',updated=? WHERE state IN ('pending','sending')", (now,))
             db.execute("UPDATE tasks SET state=CASE WHEN cancel_requested=1 THEN 'cancelled' WHEN type='publish' THEN 'unknown' WHEN deadline<=? THEN 'expired' ELSE 'queued' END,owner=NULL,lease_until=NULL,updated=? WHERE state='running'", (now, now))
             db.execute("UPDATE attempts SET finished=?,outcome='interrupted' WHERE finished IS NULL", (now,))
+            db.execute("UPDATE adaptive_decisions SET state='interrupted' WHERE state='requesting'")
 
     def claim(self, owner, paused=False, active=True):
         now = time.time()

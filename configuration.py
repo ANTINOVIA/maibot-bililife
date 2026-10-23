@@ -14,6 +14,8 @@ class Settings(BaseModel):
     active_start: str = "09:00"
     active_end: str = "22:30"
     planner_enabled: bool = True
+    adaptive_schedule_enabled: bool = True
+    max_dynamic_tasks: int = 3
     browsing_enabled: bool = True
     comments_enabled: bool = True
     replies_enabled: bool = True
@@ -25,7 +27,8 @@ class Settings(BaseModel):
     allowed_topics: List[str] = ["科学", "技术", "日常生活"]
     excluded_topics: List[str] = []
     allowed_uploaders: List[str] = []
-    allowed_videos: List[str] = []
+    owner_uid: str = ""
+    mention_owner: bool = True
     max_videos: int = 4
     max_video_seconds: int = 900
     max_browse_seconds: int = 2400
@@ -46,7 +49,6 @@ class Settings(BaseModel):
     segment_seconds: int = 90
     retention_days: int = 60
     cache_hours: int = 12
-    concurrency: Literal[1] = 1
     task_timeout_seconds: int = 300
     model_timeout_seconds: int = 100
     max_retries: int = 2
@@ -83,7 +85,7 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
-        bounds = {"max_videos": (0, 20), "max_video_seconds": (30, 7200), "max_browse_seconds": (60, 14400),
+        bounds = {"max_dynamic_tasks": (0, 10), "max_videos": (0, 20), "max_video_seconds": (30, 7200), "max_browse_seconds": (60, 14400),
                   "max_comments": (0, 10), "max_replies": (0, 20), "max_per_video": (1, 3),
                   "max_thread_rounds": (1, 5), "cooldown_seconds": (60, 86400),
                   "user_cooldown_seconds": (60, 604800), "reply_interval_seconds": (900, 86400),
@@ -100,20 +102,19 @@ class Settings(BaseModel):
                 raise ValueError("主题或 UP 主列表过长或含空项")
         if any(not x.isdigit() for x in self.allowed_uploaders):
             raise ValueError("UP 主限制必须填写数字 UID")
-        import re
-        if len(self.allowed_videos) > 30 or any(not re.fullmatch(r"BV[0-9A-Za-z]{10}", x) for x in self.allowed_videos):
-            raise ValueError("指定视频范围须为最多 30 个合法 BV 号")
+        if self.owner_uid and (len(self.owner_uid)>19 or not self.owner_uid.isascii() or not self.owner_uid.isdigit() or not 0<int(self.owner_uid)<2**63):
+            raise ValueError("主人 UID 须为有效的正整数数字字符串")
         if len(self.persona_guidance) > 2000 or len(self.expression_preferences)>12 or any(len(x)>200 for x in self.expression_preferences):
             raise ValueError("人格干预说明或表达偏好过长")
         if not self.comments_enabled:
             self.auto_publish_comments = False
         if not self.replies_enabled:
             self.auto_publish_replies = False
-        if (self.auto_publish_comments or self.auto_publish_replies) and not (self.allowed_topics or self.allowed_uploaders or self.allowed_videos):
-            raise ValueError("自动发布需要至少设置主题、UP 主或指定视频范围")
-        if len(self.prompt_overrides) > 9 or any(len(v) > 2000 for v in self.prompt_overrides.values()):
+        if (self.auto_publish_comments or self.auto_publish_replies) and not (self.allowed_topics or self.allowed_uploaders):
+            raise ValueError("自动发布需要至少设置兴趣主题或 UP 主范围")
+        if len(self.prompt_overrides) > 11 or any(len(v) > 2000 for v in self.prompt_overrides.values()):
             raise ValueError("提示词补充过长")
-        if set(self.prompt_overrides) - {"plan", "select", "understand", "decide", "comment", "reply", "memory", "evolution", "review"}:
+        if set(self.prompt_overrides) - {"plan", "discover", "adapt", "select", "understand", "decide", "comment", "reply", "memory", "evolution", "review"}:
             raise ValueError("提示词补充含未知阶段")
         return self
 
@@ -130,6 +131,8 @@ class PluginConfig(PluginConfigBase):
 def migrate_settings(data):
     """0.2.0 模式仅在加载旧配置时转换；新 API 和配置不再接受模式字段。"""
     result = dict(data)
+    result.pop("concurrency", None)
+    result.pop("allowed_videos", None)
     legacy = result.pop("mode", None)
     confirmed = result.pop("autonomous_limits_confirmed", False)
     if legacy is not None:

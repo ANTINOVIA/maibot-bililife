@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maibot-bililife"
-version = "0.2.5"
+version = "0.2.6"
 description = "麦麦的 B 站生活：证据、日程、互动与可追溯记忆"
 requires-python = ">=3.12"
 license = "MIT"

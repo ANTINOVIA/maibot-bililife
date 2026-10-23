@@ -41,7 +41,10 @@ class WebUIService:
             plans=await self.store.call("rows","SELECT id,version,payload,reason FROM plans WHERE day=? AND active=1",(day,))
             for row in rows:
                 row["payload"]=json.loads(row["payload"])
-            return redact({"date":day,"is_today":day==engine.day(),"timezone":engine.config().timezone,"now":time.time(),"paused":engine.paused,"items":rows,"deleted":deleted,"plan":{**plans[0],"payload":json.loads(plans[0]["payload"])} if plans else None})
+            adaptations=await self.store.call("rows","SELECT video_id,state,payload,created FROM adaptive_decisions WHERE day=? ORDER BY created DESC LIMIT 10",(day,))
+            for item in adaptations:
+                item["payload"]=json.loads(item["payload"])
+            return redact({"date":day,"is_today":day==engine.day(),"timezone":engine.config().timezone,"now":time.time(),"paused":engine.paused,"items":rows,"deleted":deleted,"adaptations":adaptations,"plan":{**plans[0],"payload":json.loads(plans[0]["payload"])} if plans else None})
         if section in ("comment_drafts","reply_drafts"):
             kind="reply" if section=="reply_drafts" else "comment"
             rows=await self.store.call("rows","SELECT id,video_id,kind,text,status,reason,root,parent,created FROM drafts WHERE kind=? ORDER BY created DESC LIMIT 20 OFFSET ?",(kind,(page-1)*20))

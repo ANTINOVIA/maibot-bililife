@@ -41,7 +41,7 @@ class TaskExecutor:
         config_file=self.data/"settings.toml"
         if config_file.exists():
             try:
-                candidate={**candidate,**parse_settings_document(config_file.read_text(encoding="utf-8"))}
+                candidate={**candidate,**parse_settings_document(config_file.read_text(encoding="utf-8"),legacy=True)}
                 Settings.model_validate(candidate)
             except (ValueError,TypeError):
                 candidate=migrate_settings(saved)
@@ -109,7 +109,7 @@ class TaskExecutor:
             raise PolicyBlocked("视频命中排除主题")
         if cfg.allowed_uploaders and metadata.get("up_uid") not in cfg.allowed_uploaders:
             raise PolicyBlocked("视频不属于允许 UP 主")
-        if metadata.get("bvid") not in cfg.allowed_videos and topic not in cfg.allowed_topics and not any(x in text for x in cfg.allowed_topics):
+        if not cfg.allowed_uploaders and topic not in cfg.allowed_topics and not any(x in text for x in cfg.allowed_topics):
             raise PolicyBlocked("视频不在允许主题范围内")
 
     def check(self):
@@ -129,7 +129,7 @@ class TaskExecutor:
 
     def check_module(self, kind):
         field={"discover":"browsing_enabled","explore":"browsing_enabled","watch":"browsing_enabled",
-               "draft":"comments_enabled","replies":"replies_enabled","memory":"memory_enabled","review":"review_enabled"}.get(kind)
+               "draft":"comments_enabled","replies":"replies_enabled","memory":"memory_enabled","review":"review_enabled","adapt":"adaptive_schedule_enabled"}.get(kind)
         if field and not getattr(self.settings,field):
             raise PolicyBlocked("此模块已关闭")
 
@@ -155,13 +155,13 @@ class TaskExecutor:
 
     async def enqueue(self, kind, payload, duration=None, earliest=None, deadline=None, dependencies=None, child=False):
         # 入队的数据只来自受控 API 或程序，不接受任意脚本、URL 请求或 shell。
-        allowed = {"discover", "watch", "explore", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "model_test"}
+        allowed = {"discover", "watch", "explore", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "adapt", "model_test"}
         if kind not in allowed:
             raise ValueError("未知任务类型")
         if len(dump(payload)) > 12000:
             raise ValueError("任务参数过大")
         if kind in ("discover", "explore"):
-            if not payload.get("uploader") and not payload.get("recommended"):
+            if payload.get("query") and not payload.get("uploader") and not payload.get("recommended"):
                 self.validate_query(payload.get("query", ""))
             elif payload.get("uploader") and payload["uploader"] not in self.settings.allowed_uploaders:
                 raise PolicyBlocked("UP 主必须先加入允许范围")
@@ -175,6 +175,8 @@ class TaskExecutor:
     async def schedule(self):
         now = self.now()
         if not self.paused:
+            if self.active() and not self.blocked and not self.posting_stopped and self.account_status["state"]=="authenticated":
+                await self.interaction.queue_automatic()
             if self.settings.planner_enabled and now.strftime("%H:%M") >= self.settings.plan_time:
                 plans = await self.store.call("rows", "SELECT id FROM plans WHERE day=? AND active=1", (self.day(),))
                 pending = await self.store.call("rows", "SELECT id FROM tasks WHERE type='plan' AND day=? AND state IN ('queued','retry','running')", (self.day(),))
@@ -297,6 +299,8 @@ class TaskExecutor:
                 raise
         if kind == "plan":
             return await self.planner.create(bool(payload.get("revise")), payload.get("reason", "每日主计划"))
+        if kind == "adapt":
+            return await self.planner.adapt(payload["video_id"])
         if kind in ("discover", "explore"):
             return await self.discover(payload)
         if kind == "watch":
@@ -381,6 +385,14 @@ class TaskExecutor:
         return rows[0]["id"]
 
     async def discover(self, payload):
+        if not payload.get("query") and not payload.get("uploader") and not payload.get("recommended"):
+            from .schemas import DiscoveryChoice
+            choice=await self.host.generate("discover",{
+                "interests":await self.store.call("rows","SELECT * FROM interests ORDER BY weight DESC LIMIT 20"),
+                "allowed_topics":self.settings.allowed_topics,"excluded_topics":self.settings.excluded_topics,
+                "recent":await self.store.call("rows","SELECT bvid,analysis FROM videos ORDER BY created DESC LIMIT 3")},DiscoveryChoice)
+            self.validate_query(choice.query)
+            payload={**payload,"query":choice.query,"reason":choice.reason}
         rows = await self.platform.discover(payload.get("query", ""), payload.get("uploader", ""), payload.get("recommended", False))
         chosen, skipped = [], []
         for item in rows[:min(8, self.settings.max_videos * 2)]:
@@ -388,6 +400,10 @@ class TaskExecutor:
             old = await self.store.call("rows", "SELECT id FROM videos WHERE bvid=?", (item["bvid"],))
             if old:
                 skipped.append({"bvid": item["bvid"], "reason": "重复内容"})
+                continue
+            pending=await self.store.call("rows","SELECT id FROM tasks WHERE type='watch' AND json_extract(payload,'$.query')=? AND state IN ('queued','retry','running')",(item["bvid"],))
+            if pending:
+                skipped.append({"bvid":item["bvid"],"reason":"已在观看队列"})
                 continue
             decision = await self.host.generate("select", {"candidate": item, "interests": await self.store.call("rows", "SELECT * FROM interests"),
                                                            "allowed_topics": self.settings.allowed_topics, "excluded_topics": self.settings.excluded_topics}, Selection)
@@ -397,14 +413,19 @@ class TaskExecutor:
                 except PolicyBlocked:
                     skipped.append({"bvid": item["bvid"], "reason": "超出范围"})
                     continue
-                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic}, deadline=min(self.current["deadline"], self.day_end()) if self.current else None, child=True)
+                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic}, deadline=self.life_deadline(), child=True)
                 chosen.append({"bvid": item["bvid"], "task_id": task_id, "reason": decision.reason})
                 if len(chosen) >= min(payload.get("max_items", 1), self.settings.max_videos):
                     break
             else:
                 skipped.append({"bvid": item["bvid"], "reason": decision.reason})
         await self.store.call("audit", "discovery", {"chosen": chosen, "skipped": skipped})
-        return {"chosen": chosen, "skipped": skipped}
+        return {"query":payload.get("query",""),"reason":payload.get("reason",""),"chosen": chosen, "skipped": skipped}
+
+    def life_deadline(self):
+        hour,minute=map(int,self.settings.active_end.split(":"))
+        end=self.now().replace(hour=hour,minute=minute,second=59,microsecond=0).timestamp()
+        return min(self.day_end(),end if end>time.time() else self.day_end())
 
     async def watch(self, payload):
         metadata = await self.platform.metadata(payload.get("query", payload.get("video", "")))
@@ -415,8 +436,6 @@ class TaskExecutor:
         selection = await self.host.generate("select", {"candidate": metadata, "interests": await self.store.call("rows", "SELECT * FROM interests"),
                                                        "allowed_topics": self.settings.allowed_topics, "excluded_topics": self.settings.excluded_topics}, Selection)
         reason = selection.reason
-        if metadata["bvid"] in self.settings.allowed_videos:
-            selection.browse, reason = True, "管理员指定视频；仍受排除、资源与发布规则约束"
         try:
             self.validate_scope(metadata, selection.topic)
         except PolicyBlocked as exc:
@@ -436,6 +455,8 @@ class TaskExecutor:
             await self.enqueue("draft", {"video_id": video_id}, child=True)
         if self.settings.memory_enabled:
             await self.enqueue("memory", {"video_id": video_id}, child=True)
+        if self.settings.adaptive_schedule_enabled:
+            await self.enqueue("adapt", {"video_id": video_id}, deadline=self.life_deadline(), child=True)
         return {"video_id": video_id, "coverage": evidence["coverage"], "analysis": analysis}
 
     async def review(self):

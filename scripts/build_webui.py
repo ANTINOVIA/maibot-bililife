@@ -35,7 +35,7 @@ actions = {
     'settings_toml_save': {'api':'settings_toml_save','parameters':{'module':s(False,40),'data':s(True,40000)}},
     'draft_save': {'api':'draft_save','parameters':{'draft_id':s(),'text':s(True,350)}},
     'manual_draft': {'api':'manual_draft','parameters':{'video_id':s(),'text':s(True,350)}},
-    'publish': {'api':'publish','parameters':{'draft_id':s()},'confirmation':'确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。'},
+    'publish': {'api':'publish','parameters':{'draft_id':s()}},
     'memory_edit': {'api':'memory_edit','parameters':{'memory_id':s(),'text':s(False,1200),'action':s(False,30)},'confirmation':'确认纠错或遗忘这条记忆？历史已注入会话的文本不会自动撤回。'},
     'interest_action': {'api':'interest_action','parameters':{'record_id':s(),'action':s(True,30)}},
     'backup': {'api':'backup'}

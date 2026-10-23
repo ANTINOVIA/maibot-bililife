@@ -218,8 +218,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -515,8 +514,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -812,8 +810,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -1109,8 +1106,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -1406,8 +1402,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -1703,8 +1698,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -2000,8 +1994,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -2297,8 +2290,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",
@@ -2594,8 +2586,7 @@
               "required": true,
               "max_length": 200
             }
-          },
-          "confirmation": "确认使用当前 B 站账号公开发布此草稿？提交后无法保证撤回。"
+          }
         },
         "memory_edit": {
           "api": "memory_edit",

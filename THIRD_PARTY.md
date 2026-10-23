@@ -2,6 +2,8 @@
 `bilibili_autopilot` 0.7.1，作者 sakura桜花，MIT 许可证保存在 `vendor/LICENSE`。
 上游： https://github.com/namchengwuqiu/bilibili_autopilot 。
 
+BiliLife 对客户端的发布入口作了本地扩展，支持由 UID 绑定的主人提及字段；原作者版权保留。
+
 BiliLife 的独立源码仓库： https://github.com/Sakyurara/maibot-bililife 。
 本项目采用根目录 `LICENSE` 中的 MIT 许可证；上述第三方文件保留原作者版权与
 `vendor/LICENSE`，本项目署名不替代第三方版权声明。

@@ -37,7 +37,7 @@ ssh -i <私钥路径> -p <SSH端口> -o IdentitiesOnly=yes -o StrictHostKeyCheck
 快照，利用宿主配置接口卸载再加载，不重启 MaiBot 主进程。示例：
 
 ```sh
-/opt/maibot/.venv/bin/python /tmp/deploy_server.py /tmp/maibot-bililife-0.2.5.zip <本地生成的SHA256>
+/opt/maibot/.venv/bin/python /tmp/deploy_server.py /tmp/maibot-bililife-0.2.6.zip <本地生成的SHA256>
 ```
 
 脚本在 `/opt/maibot-bililife-backups/时间戳/` 保留私有备份与宿主源码哈希基线。
@@ -56,7 +56,7 @@ WebUI 运行日志页“备份数据库”使用 SQLite online backup，能一�
 `model-secrets.json`（存在时）；不要把这些私有备份上传到源码仓库或发到本地验收报告。
 WebUI 数据库备份只附带不含密钥的模型路由快照。
 
-迁移由 `migrations/001_initial.sql`、`002_module_controls.sql` 和 `schema_version` 管理。升级前留快照；
+迁移由 `migrations/001_initial.sql`、`002_module_controls.sql`、`003_autonomous_life.sql` 和 `schema_version` 管理。升级前留快照；
 本版本不修改宿主数据表。未来破坏性迁移必须提供向前兼容方案或停机恢复说明。
 
 源码回滚默认保留当前数据库，防止丢失远端已成功或未知的发布记录。
@@ -84,6 +84,17 @@ WebUI 数据库备份只附带不含密钥的模型路由快照。
 
 模型选择可在模型页直接下拉，或用 `model-routing.example.toml` 的格式输入；
 独立提供商可参考 `provider.example.toml`。提供商密钥不写入普通业务TOML及导出。
+
+## 0.2.6 自主生活设置
+
+升级会移除旧 `allowed_videos` 特殊放行和固定 `concurrency` 字段，保留现有主题、账号及互动权限。
+主计划按兴趣自主发现内容，无需填视频。`adaptive_schedule_enabled` 允许经历触发的自主追加，
+`max_dynamic_tasks` 限制当日追加任务数。调度保持单机顺序执行。
+
+评论与回复的自动发布开关仍分别保存，不因升级自动开启。开启后无需逐条确认；
+既有人工草稿和结果未知的发布不会被自动队列重新提交。
+`owner_uid` 填主人的数字 B 站 UID，`mention_owner=true` 在新生成的视频评论中添加真实提及。
+留空时不添加；已有含主人提及的草稿在主人配置变化后需重新生成。
 
 ## 卸载
 

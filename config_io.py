@@ -25,7 +25,7 @@ def settings_document(settings, module=""):
     if module and module not in MODULES:
         raise ValueError("配置模块不存在")
     values=settings.model_dump()
-    lines=["# MaiBot BiliLife 0.2.5 · 不包含账号凭据或模型密钥", "# 可在对应模块的 TOML 编辑器保存，或修改服务器 settings.toml 后重载插件。", ""]
+    lines=["# MaiBot BiliLife 0.2.6 · 不包含账号凭据或模型密钥", "# 可在对应模块的 TOML 编辑器保存，或修改服务器 settings.toml 后重载插件。", ""]
     for name,info in MODULES.items():
         if module and name!=module:
             continue
@@ -35,10 +35,14 @@ def settings_document(settings, module=""):
     return "\n".join(lines)
 
 
-def parse_settings_document(text,module=""):
+def parse_settings_document(text,module="",legacy=False):
     if len(text)>40000:
         raise ValueError("TOML 超过40,000字符")
     document=tomllib.loads(text)
+    if legacy:
+        for section,key in (("schedule","concurrency"),("browse","allowed_videos")):
+            if isinstance(document.get(section),dict):
+                document[section].pop(key,None)
     if module and module not in MODULES:
         raise ValueError("配置模块不存在")
     allowed={module} if module else set(MODULES)

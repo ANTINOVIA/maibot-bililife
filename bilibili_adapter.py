@@ -135,12 +135,32 @@ class BilibiliAdapter(BiliClient):
         for row in rows:
             author = str((row.get("member") or {}).get("mid", ""))
             text = (row.get("content") or {}).get("message", "")
-            if (author == operation["account"] and text == operation["text"]
+            if (author == operation["account"] and text.rstrip() == operation["text"].rstrip()
                     and abs(float(row.get("ctime", 0)) - operation["created"]) < 600
                     and (not operation["parent"] or str(row.get("parent", "")) == operation["parent"])):
                 matches.append(str(row["rpid"]))
         return matches[0] if len(matches) == 1 else None
 
-    async def publish_operation(self, metadata, text, can_send, root="", parent=""):
+    async def comment_context(self, aid, root=""):
+        payload=await self.thread(aid,root)
+        rows=payload.get("replies") or []
+        return [{"rpid":str(row.get("rpid","")),"text":str((row.get("content") or {}).get("message",""))[:500],
+                 "author_uid":str((row.get("member") or {}).get("mid",""))} for row in rows[:8]]
+
+    async def owner_mention(self, text, owner_uid):
+        self.check()
+        info=await self._read_stage("读取主人公开账号名称",user.User(int(owner_uid),credential=self.credential).get_user_info())
+        name=str(info.get("name","")).strip()
+        if not name or len(name)>60 or any(c in name for c in ('@','\n','\r')):
+            raise ValueError("无法取得有效的主人账号名称")
+        token='@'+name+' '
+        # UID 绑定真实名称和平台提及字段，不能以 @数字 冒充通知。
+        if token not in text:
+            text=text.rstrip()+' '+token
+        if len(text)>350:
+            raise ValueError("添加主人提醒后评论超过350字符")
+        return text,{"uid":owner_uid,"name":name}
+
+    async def publish_operation(self, metadata, text, can_send, root="", parent="", mentions=None):
         item = VideoItem(metadata["bvid"], metadata["aid"], metadata["title"], metadata["up_uid"], metadata["author"], metadata["duration"])
-        return await self.publish(item, text, can_send, root=int(root) if root else None, parent=int(parent) if parent else None)
+        return await self.publish(item, text, can_send, root=int(root) if root else None, parent=int(parent) if parent else None,mentions=mentions)

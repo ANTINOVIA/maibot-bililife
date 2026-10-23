@@ -24,6 +24,8 @@ class InteractionService:
         cfg = self.engine.config()
         if not (cfg.replies_enabled if incoming else cfg.comments_enabled):
             return {"drafted": False, "reason": "对应互动模块已关闭"}
+        # 自动草稿绑定当前真实账号，避免启动时尚未检查账号产生匿名草稿。
+        await self.platform.check_account()
         rows = await self.store.call("rows", "SELECT * FROM videos WHERE id=?", (video_id,))
         if not rows or rows[0]["state"] != "understood":
             return {"drafted": False, "reason": "尚无真实理解记录"}
@@ -31,7 +33,9 @@ class InteractionService:
         metadata, evidence, analysis = [json.loads(row[x]) for x in ("payload", "evidence", "analysis")]
         if not analysis.get("suitable_for_comment") or evidence.get("types") == ["metadata"]:
             return {"drafted": False, "reason": "证据不足或不适合互动"}
-        context = {"video": metadata, "evidence": evidence, "understanding": analysis, "thread": incoming or {}, "allowed_topics": cfg.allowed_topics}
+        comment_context=await self.platform.comment_context(metadata["aid"],incoming["root_rpid"] if incoming else "")
+        context = {"video": metadata, "evidence": evidence, "understanding": analysis, "thread": incoming or {},
+                   "comments":comment_context,"allowed_topics": cfg.allowed_topics}
         decision = await self.host.generate("decide", context, InteractionDecision)
         if not decision.interact:
             await self.store.call("audit", "silent", {"video_id": video_id, "reason": decision.reason})
@@ -39,29 +43,57 @@ class InteractionService:
         context["decision"] = decision.model_dump()
         draft = await self.host.generate("reply" if incoming else "comment", context, Draft)
         text = evidence_text(metadata, evidence) + ("\n" + incoming["text"] if incoming else "")
-        if not draft.evidence_quote or draft.evidence_quote not in text or decision.evidence_quote not in text:
+        discussion=text+'\n'+'\n'.join(row['text'] for row in comment_context)
+        if not draft.evidence_quote or draft.evidence_quote not in text or decision.evidence_quote not in discussion:
             raise ValueError("草稿缺少可追溯的逐字证据")
         safe_public_text(draft.text)
         guard_unobserved_senses(draft.text, evidence)
+        mention=None
+        if not incoming and cfg.mention_owner and cfg.owner_uid and cfg.owner_uid!=self.platform.uid:
+            draft.text,mention=await self.platform.owner_mention(draft.text,cfg.owner_uid)
+            safe_public_text(draft.text)
         draft_id, now = uid(), time.time()
         await self.store.call("execute", "INSERT INTO drafts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                               (draft_id, video_id, "reply" if incoming else "comment", draft.text, draft.evidence_quote, draft.reason, "draft", self.platform.uid,
                                str(incoming["root_rpid"]) if incoming else "", str(incoming["source_rpid"]) if incoming else "",
                                incoming["sender_uid"] if incoming else "", incoming["event_id"] if incoming else None, now, now))
+        await self.store.call("execute","INSERT INTO draft_origins VALUES(?,'agent')",(draft_id,))
+        if mention:
+            await self.store.call("execute","INSERT INTO draft_mentions VALUES(?,?,?)",(draft_id,mention["uid"],mention["name"]))
         if (cfg.auto_publish_replies if incoming else cfg.auto_publish_comments):
-            await self.engine.enqueue("publish", {"draft_id": draft_id, "manual": False})
+            await self.queue_automatic()
         return {"drafted": True, "draft_id": draft_id}
+
+    async def queue_automatic(self):
+        cfg=self.engine.config()
+        if self.engine.paused or self.engine.posting_stopped or self.engine.blocked or not self.engine.active():
+            return []
+        if not (cfg.auto_publish_comments or cfg.auto_publish_replies):
+            return []
+        rows=await self.store.call("rows","SELECT d.* FROM drafts d JOIN draft_origins o ON o.draft_id=d.id WHERE d.status='draft' AND d.account=? AND o.origin='agent' ORDER BY d.created LIMIT 20",(self.platform.uid,))
+        queued=[]
+        for row in rows:
+            if not (cfg.auto_publish_replies if row['kind']=='reply' else cfg.auto_publish_comments):
+                continue
+            old=await self.store.call("rows","SELECT id FROM tasks WHERE type='publish' AND json_extract(payload,'$.draft_id')=?",(row['id'],))
+            if old:
+                continue
+            queued.append(await self.engine.enqueue('publish',{'draft_id':row['id'],'manual':False},deadline=self.engine.life_deadline()))
+        return queued
 
     async def publish(self, draft_id, manual=False):
         self.engine.check()
         cfg = self.engine.config()
-        if self.engine.posting_stopped or not self.engine.active():
+        if self.engine.paused or self.engine.posting_stopped or not self.engine.active():
             raise PolicyBlocked("发布已停止或不在允许时段")
         await self.platform.check_account()
         rows = await self.store.call("rows", "SELECT * FROM drafts WHERE id=?", (draft_id,))
         if not rows or rows[0]["status"] != "draft":
             raise PolicyBlocked("草稿不存在或已进入发送流程")
         draft = rows[0]
+        mentions=await self.store.call("rows","SELECT uid,name FROM draft_mentions WHERE draft_id=?",(draft_id,))
+        if mentions and (not cfg.mention_owner or any(row['uid']!=cfg.owner_uid for row in mentions)):
+            raise PolicyBlocked("主人提醒配置已改变，请重新生成草稿")
         enabled = cfg.replies_enabled if draft["kind"]=="reply" else cfg.comments_enabled
         automatic = cfg.auto_publish_replies if draft["kind"]=="reply" else cfg.auto_publish_comments
         if not enabled or (not manual and not automatic):
@@ -123,12 +155,17 @@ class InteractionService:
             except Exception:
                 return False
             current = self.engine.config()
-            return (not self.engine.posting_stopped and self.engine.active() and self.platform.uid == draft["account"]
+            return (not self.engine.paused and not self.engine.posting_stopped and self.engine.active() and self.platform.uid == draft["account"]
+                    and (not mentions or (current.mention_owner and all(row['uid']==current.owner_uid for row in mentions)))
                     and (current.replies_enabled if draft["kind"]=="reply" else current.comments_enabled)
                     and (manual or (current.auto_publish_replies if draft["kind"]=="reply" else current.auto_publish_comments)))
         try:
             await self.store.call("execute", "UPDATE operations SET state='sending',updated=? WHERE id=?", (time.time(), operation_id))
-            rpid = await self.platform.publish_operation(metadata, draft["text"], can_send, draft["root"], draft["parent"])
+            if mentions:
+                mapping={row['name']:int(row['uid']) for row in mentions if '@'+row['name']+' ' in draft['text']}
+                rpid = await self.platform.publish_operation(metadata, draft["text"], can_send, draft["root"], draft["parent"],mentions=mapping)
+            else:
+                rpid = await self.platform.publish_operation(metadata, draft["text"], can_send, draft["root"], draft["parent"])
         except (PublishNotSent, LoginRequired) as exc:
             await self._result(operation_id, draft_id, "not_sent", type(exc).__name__)
             raise

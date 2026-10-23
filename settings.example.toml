@@ -1,16 +1,17 @@
-# MaiBot BiliLife 0.2.5 · 不包含账号凭据或模型密钥
+# MaiBot BiliLife 0.2.6 · 不包含账号凭据或模型密钥
 # 可在对应模块的 TOML 编辑器保存，或修改服务器 settings.toml 后重载插件。
 
 # 每日安排
 [schedule]
 planner_enabled = true
+adaptive_schedule_enabled = true
+max_dynamic_tasks = 3
 timezone = "Asia/Shanghai"
 plan_time = "09:00"
 active_start = "09:00"
 active_end = "22:30"
 task_timeout_seconds = 300
 max_retries = 2
-concurrency = 1
 
 # 浏览与理解
 [browse]
@@ -21,7 +22,6 @@ max_browse_seconds = 2400
 allowed_topics = ["科学", "技术", "日常生活"]
 excluded_topics = []
 allowed_uploaders = []
-allowed_videos = []
 enable_frames = true
 max_frames = 3
 enable_asr = false
@@ -35,6 +35,8 @@ daily_download_mb = 120
 [comments]
 comments_enabled = true
 auto_publish_comments = false
+owner_uid = ""
+mention_owner = true
 max_comments = 1
 max_per_video = 1
 cooldown_seconds = 3600

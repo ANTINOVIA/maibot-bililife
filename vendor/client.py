@@ -449,6 +449,7 @@ class BiliClient:
         *,
         root: Optional[int] = None,
         parent: Optional[int] = None,
+        mentions: Optional[dict] = None,
     ) -> str:
         if (root is None) != (parent is None) or (
             root is not None and (type(root) is not int or type(parent) is not int or root <= 0 or parent <= 0)
@@ -472,6 +473,10 @@ class BiliClient:
         )
         if root is not None:
             data.update(root=root, parent=parent)
+        if mentions:
+            if any(not isinstance(name,str) or '@'+name+' ' not in text or type(mid) is not int or mid<=0 for name,mid in mentions.items()):
+                raise PublishNotSent("主人提及参数与评论正文不匹配")
+            data['at_name_to_mid']=json.dumps(mentions,ensure_ascii=False)
         request.update_data(**data)
         try:
             prepared = await asyncio.wait_for(request._prepare_request(), timeout=30)

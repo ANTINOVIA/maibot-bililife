@@ -2,10 +2,11 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import json
+import asyncio
 import time
 
 from .maibot_adapter import ModelUnavailable
-from .schemas import PlanProposal
+from .schemas import PlanProposal, ScheduleAdjustment
 from .storage import dump, uid
 
 
@@ -31,7 +32,7 @@ class DailyPlanner:
         budget = await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (day,))
         manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','rest','memory','review','draft','replies') ORDER BY earliest LIMIT 10",(day,))
         external = {"date": day, "now": now.isoformat(), "timezone": cfg.timezone,
-                    "settings": cfg.model_dump(exclude={"prompt_overrides"}), "interests": interests,
+                    "settings": cfg.model_dump(exclude={"prompt_overrides","owner_uid"}), "interests": interests,
                     "recent": recent, "summaries": summaries, "unfinished": pending, "interactions": interactions,
                     "manual_schedule":manual,"budget_usage": budget, "account": self.engine.account_status, "health": self.engine.health}
         degraded = ""
@@ -58,6 +59,60 @@ class DailyPlanner:
         await self.store.call("audit", "plan_created", {"plan_id": plan_id, "reason": reason, "degraded": degraded})
         return {"plan_id": plan_id, "degraded": bool(degraded), "reason": degraded}
 
+    async def adapt(self, video_id):
+        cfg=self.engine.config()
+        if not cfg.adaptive_schedule_enabled or not cfg.max_dynamic_tasks:
+            return {"inserted":[],"reason":"自主追加日程已关闭"}
+        day,key=self.engine.day(),self.engine.day()+":"+video_id
+        claimed=await self.store.call("execute","INSERT OR IGNORE INTO adaptive_decisions VALUES(?,?,?,'requesting','{}',?)",(key,day,video_id,time.time()))
+        if not claimed:
+            return {"inserted":[],"reason":"此经历已评估，不重复追加"}
+        try:
+            count=(await self.store.call("rows","SELECT COUNT(*) AS n FROM schedule_edits WHERE day=? AND action='agent_insert'",(day,)))[0]["n"]
+            if count>=cfg.max_dynamic_tasks:
+                return {"inserted":[],"reason":"当日自主追加额度已用完"}
+            rows=await self.store.call("rows","SELECT payload,analysis FROM videos WHERE id=? AND state='understood'",(video_id,))
+            if not rows:
+                raise ValueError("只能根据已经理解的经历追加日程")
+            context={"video":json.loads(rows[0]["payload"]),"understanding":json.loads(rows[0]["analysis"]),
+                     "settings":cfg.model_dump(exclude={"prompt_overrides","owner_uid"}),"now":self.engine.now().isoformat(),
+                     "remaining_insertions":cfg.max_dynamic_tasks-count,
+                     "budget":await self.store.call("rows","SELECT resource,used FROM budget WHERE day=?",(day,)),
+                     "schedule":await self.store.call("rows","SELECT type,payload,earliest,deadline FROM tasks WHERE day=? AND state IN ('queued','running','retry') LIMIT 15",(day,))}
+            proposal=await self.host.generate("adapt",context,ScheduleAdjustment)
+            if len(proposal.tasks)>cfg.max_dynamic_tasks-count:
+                raise ValueError("追加任务超过剩余额度")
+            tasks=self.validate(proposal,self.engine.now())
+            self.engine.check()
+            # 配置可能在模型等待期间改变，事务前再核对。
+            if not self.engine.config().adaptive_schedule_enabled:
+                raise ValueError("自主追加已关闭")
+            def insert():
+                with self.store.connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    used=db.execute("SELECT COUNT(*) FROM schedule_edits WHERE day=? AND action='agent_insert'",(day,)).fetchone()[0]
+                    if used+len(tasks)>self.engine.config().max_dynamic_tasks:
+                        raise ValueError("自主追加额度不足")
+                    budget={r['resource']:r['used'] for r in db.execute("SELECT resource,used FROM budget WHERE day=?",(day,))}
+                    pending=db.execute("SELECT type,payload FROM tasks WHERE day=? AND state IN ('queued','retry') AND type IN ('discover','explore','watch')",(day,)).fetchall()
+                    reserved=sum(1 if r['type']=='watch' else json.loads(r['payload']).get('max_items',1) for r in pending)
+                    added=sum(t['payload']['max_items'] for t in tasks if t['type'] in ('discover','explore'))
+                    if added and budget.get('videos',0)+reserved+added>cfg.max_videos:
+                        raise ValueError("剩余浏览额度不足，已有日程优先")
+                    for task in tasks:
+                        db.execute("INSERT INTO tasks(id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,'queued',?,?,?,?,?,?,?,?)",
+                                   (task['id'],day,task['type'],dump({**task['payload'],'origin':'agent','source_video_id':video_id}),task['earliest'],task['deadline'],task['earliest'],task['duration'],dump(task['dependencies']),time.time(),time.time()))
+                        db.execute("INSERT INTO schedule_edits VALUES(?,?,?,?,?,?,?)",(uid(),day,'agent_insert',task['id'],dump({'video_id':video_id}),proposal.reason,time.time()))
+                    result={'inserted':[t['id'] for t in tasks],'reason':proposal.reason}
+                    db.execute("UPDATE adaptive_decisions SET state='completed',payload=? WHERE source_key=?",(dump(result),key))
+                    return result
+            return await asyncio.to_thread(insert)
+        except BaseException as exc:
+            await asyncio.shield(self.store.call("execute","UPDATE adaptive_decisions SET state='failed',payload=? WHERE source_key=? AND state='requesting'",(dump({"inserted":[],"reason":type(exc).__name__+"：自主追加未执行"}),key)))
+            raise
+        finally:
+            await self.store.call("execute","UPDATE adaptive_decisions SET state='completed',payload=? WHERE source_key=? AND state='requesting'",(dump({"inserted":[],"reason":"自主追加额度已用完"}),key))
+
     def validate(self, proposal, now):
         cfg, tasks, ids = self.engine.config(), [], [uid() for _ in proposal.tasks]
         total_items, total_duration = 0, 0
@@ -76,10 +131,11 @@ class DailyPlanner:
                 if not self.engine.active(start) or not self.engine.active(end):
                     raise ValueError("任务超出允许活跃时段")
                 if item.type in ("discover", "explore"):
-                    try:
-                        self.engine.validate_query(item.query)
-                    except RuntimeError:
-                        raise ValueError("计划检索词超出允许主题") from None
+                    if item.query:
+                        try:
+                            self.engine.validate_query(item.query)
+                        except RuntimeError:
+                            raise ValueError("计划检索词超出允许主题") from None
                     total_items += item.max_items
                 if item.type == "watch":
                     from .bilibili_adapter import parse_video
