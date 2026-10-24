@@ -34,6 +34,8 @@ ssh -i <私钥路径> -p <SSH端口> -o IdentitiesOnly=yes -o StrictHostKeyCheck
 
 首次切换到新插件 ID 时，先按 [ID 迁移与回滚](ID_MIGRATION.md) 操作；下面的升级和源码恢复脚本用于新 ID 内的后续维护。
 
+不要单独升级 `bilibili-api-python==17.4.2`：评论与回复发布依赖其私有方法 `Api._prepare_request()`，上游签名或返回结构变化可能使发布失败。升级平台库前先停止自动发布，并按 [私有接口依赖说明](COMPATIBILITY.md#评论发布的私有接口依赖) 复核调用契约和发布行为；不得以升级或回滚为由重新发送结果未知的操作。
+
 本地先运行测试、构建和打包，核对 SHA256，将 ZIP 上传服务器 `/tmp/`。
 `scripts/deploy_server.py ZIP SHA256` 只操作本插件目录；升级前暂停、备份源码与在线 SQLite
 快照，利用宿主配置接口卸载再加载，不重启 MaiBot 主进程。示例：

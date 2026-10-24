@@ -24,6 +24,18 @@
 [生命周期](https://docs.mai-mai.org/plugin/hooks)，再按已安装 SDK 与宿主实现核对。
 不宣称其他 MaiBot/SDK/dashboard 组合已经兼容；安装包未升级宿主。
 
+## 评论发布的私有接口依赖
+
+`vendor/client.py` 的 `publish()` 直接调用 `bilibili_api.utils.network.Api._prepare_request()`；`publish_reply()` 也复用这条发布路径。当前平台库在 `_manifest.json`、`pyproject.toml` 和依赖锁定文件中固定为 `bilibili-api-python==17.4.2`。
+
+该私有方法用于准备签名、参数和凭据。插件随后读取返回对象中的 `url`、`params`、`headers`、`data`、`cookies`，使用自身 HTTP 客户端发送单次 POST，而不调用 `Api.request` 的 WBI 重试循环；签名准备完成后还会再次检查是否允许发送。
+
+`_prepare_request()` 不属于稳定公共 API。上游改变方法签名、异步调用方式、签名逻辑或返回字段，都可能使评论和回复发布失败。版本锁定只约束当前依赖组合，不保证其他版本可用；不要单独解除锁定或升级平台库。
+
+升级平台库前，应先停止自动发布，在隔离环境复核上述调用契约，并检查签名和 Cookie/CSRF 传递、根评论与父评论参数、主人提及映射、发送前停止检查及单次 POST 行为。离线回归不能代替真实平台验收；公开发布验证仍需明确授权的测试对象与正文。恢复运行前先核对已有发送状态，结果未知的操作不得直接重发。
+
+## 宿主源码基线
+
 宿主关键源码 SHA256（部署前后核对一致）：
 
 ```text

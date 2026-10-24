@@ -865,6 +865,8 @@ data_dir/
 
 构建 WebUI：`python scripts/build_webui.py`；生成插件包：`python scripts/package.py`。运行需要宿主 SDK 和清单依赖，不通过安装 Python wheel 替代 MaiBot 插件导入。发行版本来自 `_manifest.json`，本 README 修改不改变版本。
 
+评论与回复发布存在一项私有依赖：`vendor/client.py` 的 `publish()` 使用 `bilibili-api-python==17.4.2` 的 `Api._prepare_request()` 准备签名请求，再由插件发送单次 POST，以避免通用请求包装器自动重试写请求。该方法不属于稳定公共 API，上游改变签名或返回结构可能导致发布失败；不要单独升级平台库。升级前的复核要求见 [私有接口依赖说明](docs/COMPATIBILITY.md#评论发布的私有接口依赖)。
+
 升级、卸载、凭据保护及恢复步骤见 [运维文档](docs/OPERATIONS.md)。恢复默认保留当前数据库和发布状态；恢复旧数据库若会丢弃或回退已有发布操作则被拒绝。回滚到旧媒体协议版本前，应暂停并恢复兼容路由；不以回滚为理由重新发送未知评论。
 
 ## 许可证
