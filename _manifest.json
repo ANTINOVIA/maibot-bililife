@@ -1,13 +1,14 @@
 {
   "manifest_version": 2,
   "id": "ANTINOVA.maibot-bililife",
+  "plugin_type": "integration",
   "version": "0.2.6",
   "name": "麦麦的 B 站生活",
   "description": "钟面日程、模块独立配置、TOML、模型直选与可干预的兴趣记忆。默认不自动发布。",
   "author": {"name": "ANTINOVIA", "url": "https://github.com/ANTINOVIA"},
   "urls": {"repository": "https://github.com/ANTINOVIA/maibot-bililife", "homepage": "https://github.com/ANTINOVIA/maibot-bililife", "documentation": "https://github.com/ANTINOVIA/maibot-bililife#readme", "issues": "https://github.com/ANTINOVIA/maibot-bililife/issues"},
   "license": "MIT",
-  "host_application": {"min_version": "1.3.14", "max_version": "1.3.14"},
+  "host_application": {"min_version": "1.3.14", "max_version": "1.3.99"},
   "sdk": {"min_version": "2.16.0", "max_version": "2.16.0"},
   "capabilities": ["config.get", "llm.generate", "llm.get_available_models", "llm.transcribe_audio", "maisaka.context.append", "send.text"],
   "dependencies": [

@@ -53,7 +53,7 @@ flowchart LR
 | 设置总览 | 跳转各模块、TOML、独立 B 站扫码 |
 | 运行记录 | 脱敏审计、模型调用、资源设置与数据库备份 |
 
-适配环境为 **MaiBot 1.3.14 / maibot-plugin-sdk 2.16.0 / Dashboard 1.9.8 / Python 3.12**。清单将宿主与 SDK 限定在上述版本；其他版本需要重新适配。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
+清单声明的宿主兼容范围为 **MaiBot 1.3.14–1.3.99**，SDK 仍限定为 **maibot-plugin-sdk 2.16.0**；插件类型为 `integration`（外部平台集成）。实际验证环境为 **MaiBot 1.3.14 / SDK 2.16.0 / Dashboard 1.9.8 / Python 3.12**，范围内其他宿主补丁版本尚未逐一验证。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
 
 1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `ANTINOVA.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
 2. 打开 BiliLife **设置总览**生成二维码，使用 B 站客户端完成独立扫码。
