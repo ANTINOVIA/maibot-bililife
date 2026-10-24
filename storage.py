@@ -8,6 +8,8 @@ import os
 import sqlite3
 import time
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .security import redact
 
@@ -39,6 +41,21 @@ class Storage:
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(3,?)", (time.time(),))
             db.executescript((Path(__file__).parent / "migrations/004_comment_reading.sql").read_text(encoding="utf-8"))
             db.execute("INSERT OR IGNORE INTO schema_version VALUES(4,?)", (time.time(),))
+            db.executescript((Path(__file__).parent / "migrations/005_budget_reservations.sql").read_text(encoding="utf-8"))
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM schema_version WHERE version=5").fetchone():
+                # Legacy evidence was saved only after the video allowance was charged.
+                # Record those reservations without rewriting historical totals.
+                row = db.execute("SELECT value FROM kv WHERE key='settings'").fetchone()
+                timezone = ZoneInfo(json.loads(row[0]).get('timezone', 'Asia/Shanghai') if row else 'Asia/Shanghai')
+                for video in db.execute("SELECT id,payload,evidence,created FROM videos").fetchall():
+                    if not json.loads(video['evidence']).get('types'):
+                        continue
+                    day = datetime.fromtimestamp(video['created'], timezone).date().isoformat()
+                    resources = {'videos': 1, 'browse_seconds': json.loads(video['payload'])['duration']}
+                    db.execute("INSERT OR IGNORE INTO budget_reservations VALUES(?,?,?,?)",
+                               (day, 'watch:' + video['id'], dump(resources), video['created']))
+                db.execute("INSERT INTO schema_version VALUES(5,?)", (time.time(),))
         self.path.chmod(0o600)
         self.lock_file = None
 
@@ -126,6 +143,26 @@ class Storage:
 
     def refund(self, day, resource, amount):
         self.execute("UPDATE budget SET used=MAX(0,used-?) WHERE day=? AND resource=?", (max(0, amount), day, resource))
+
+    def reserve_once(self, day, reservation_key, resources):
+        """Persist allowance ownership atomically; retries reuse it, actual calls/bytes do not."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM budget_reservations WHERE day=? AND reservation_key=?",
+                          (day, reservation_key)).fetchone():
+                return False
+            for name, (amount, limit) in resources.items():
+                if amount < 0:
+                    raise ValueError("资源预扣不能为负")
+                row = db.execute("SELECT used FROM budget WHERE day=? AND resource=?", (day, name)).fetchone()
+                if (row[0] if row else 0) + amount > limit:
+                    raise BudgetExceeded(f"当日 {name} 预算耗尽")
+            for name, (amount, _) in resources.items():
+                db.execute("INSERT INTO budget VALUES(?,?,?) ON CONFLICT(day,resource) DO UPDATE SET used=used+excluded.used",
+                           (day, name, amount))
+            db.execute("INSERT INTO budget_reservations VALUES(?,?,?,?)",
+                       (day, reservation_key, dump({key: value[0] for key, value in resources.items()}), time.time()))
+        return True
 
     def add_task(self, kind, payload, day, earliest, deadline, duration=300, plan_id=None, dependencies=None, task_id=None):
         task_id, now = task_id or uid(), time.time()

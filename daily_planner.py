@@ -8,6 +8,7 @@ import time
 from .maibot_adapter import ModelUnavailable
 from .schemas import PlanProposal, ScheduleAdjustment
 from .storage import dump, uid
+from .bilibili_adapter import parse_video
 
 
 class DailyPlanner:
@@ -32,6 +33,7 @@ class DailyPlanner:
         budget = await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (day,))
         manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies') ORDER BY earliest LIMIT 10",(day,))
         external = {"date": day, "now": now.isoformat(), "timezone": cfg.timezone,
+                    "current_rest_until": self.engine.rest_until(),
                     "settings": cfg.model_dump(exclude={"prompt_overrides","owner_uid"}), "interests": interests,
                     "recent": recent, "summaries": summaries, "unfinished": pending, "interactions": interactions,
                     "manual_schedule":manual,"budget_usage": budget, "account": self.engine.account_status, "health": self.engine.health}
@@ -43,10 +45,11 @@ class DailyPlanner:
             tasks = self.validate(proposal, now)
         except (ValueError, ModelUnavailable) as exc:
             degraded = type(exc).__name__ + "：计划生成失败，保守降级为休息与复盘"
-            tasks = [{"id": uid(), "type": "rest", "earliest": time.time(), "deadline": self.engine.day_end(), "duration": 30,
+            fallback_end = min(time.time() + cfg.schedule_window_seconds('rest'), self.engine.day_end())
+            tasks = [{"id": uid(), "type": "rest", "earliest": time.time(), "deadline": fallback_end, "duration": 30,
                       "dependencies": [], "payload": {"goal": "休息", "reason": degraded}}]
             proposal = PlanProposal(theme="保守休息：待模型/计划恢复", tasks=[{
-                "type": "rest", "earliest_start": now.isoformat(), "deadline": datetime.fromtimestamp(self.engine.day_end(), ZoneInfo(cfg.timezone)).isoformat(),
+                "type": "rest", "earliest_start": now.isoformat(), "deadline": datetime.fromtimestamp(fallback_end, ZoneInfo(cfg.timezone)).isoformat(),
                 "goal": "休息并保留真实错误状态", "reason": degraded}])
             await self.store.call("set", "plan_error", degraded)
         else:
@@ -55,7 +58,10 @@ class DailyPlanner:
         payload.update(timezone=cfg.timezone, degraded=bool(degraded), error=degraded)
         for index, task in enumerate(tasks):
             if index < len(payload["tasks"]):
-                payload["tasks"][index]["task_id"] = task["id"]
+                payload["tasks"][index].update(task["payload"])
+                payload["tasks"][index].update(task_id=task["id"],
+                    earliest_start=datetime.fromtimestamp(task['earliest'],ZoneInfo(cfg.timezone)).isoformat(),
+                    deadline=datetime.fromtimestamp(task['deadline'],ZoneInfo(cfg.timezone)).isoformat())
         plan_id = await self.store.call("save_plan", day, payload, tasks, reason, revise)
         await self.store.call("audit", "plan_created", {"plan_id": plan_id, "reason": reason, "degraded": degraded})
         return {"plan_id": plan_id, "degraded": bool(degraded), "reason": degraded}
@@ -76,6 +82,7 @@ class DailyPlanner:
             if not rows:
                 raise ValueError("只能根据已经理解的经历追加日程")
             context={"video":json.loads(rows[0]["payload"]),"understanding":json.loads(rows[0]["analysis"]),
+                     "current_rest_until":self.engine.rest_until(),
                      "settings":cfg.model_dump(exclude={"prompt_overrides","owner_uid"}),"now":self.engine.now().isoformat(),
                      "remaining_insertions":cfg.max_dynamic_tasks-count,
                      "budget":await self.store.call("rows","SELECT resource,used FROM budget WHERE day=?",(day,)),
@@ -96,7 +103,20 @@ class DailyPlanner:
                         raise ValueError("自主追加额度不足")
                     budget={r['resource']:r['used'] for r in db.execute("SELECT resource,used FROM budget WHERE day=?",(day,))}
                     pending=db.execute("SELECT type,payload FROM tasks WHERE day=? AND state IN ('queued','retry') AND type IN ('discover','explore','watch')",(day,)).fetchall()
-                    reserved=sum(1 if r['type']=='watch' else json.loads(r['payload']).get('max_items',1) for r in pending)
+                    reserved=0
+                    for row in pending:
+                        payload=json.loads(row['payload'])
+                        if row['type']!='watch':
+                            reserved+=payload.get('max_items',1)
+                            continue
+                        try:
+                            bvid,page=parse_video(payload.get('query',payload.get('video','')))
+                        except ValueError:
+                            reserved+=1
+                            continue
+                        if not db.execute('SELECT 1 FROM budget_reservations WHERE day=? AND reservation_key=?',
+                                          (day,f'watch:{bvid}:p{page}')).fetchone():
+                            reserved+=1
                     added=sum(t['payload']['max_items'] for t in tasks if t['type'] in ('discover','explore'))
                     if added and budget.get('videos',0)+reserved+added>cfg.max_videos:
                         raise ValueError("剩余浏览额度不足，已有日程优先")
@@ -121,6 +141,9 @@ class DailyPlanner:
     def validate(self, proposal, now):
         cfg, tasks, ids = self.engine.config(), [], [uid() for _ in proposal.tasks]
         total_items, total_duration, comment_sessions = 0, 0, 0
+        previous_end = None
+        occupied_rests = self.store.rows("SELECT t.earliest,t.deadline FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id WHERE t.type='rest' AND d.task_id IS NULL AND t.deadline>? AND t.state NOT IN ('cancelled','skipped','expired','failed') AND (t.plan_id IS NULL OR t.state IN ('running','succeeded') OR ?=1) ORDER BY t.earliest",
+                                        (now.timestamp(),int(isinstance(proposal,ScheduleAdjustment))))
         for index, item in enumerate(proposal.tasks):
             try:
                 self.engine.check_module(item.type)
@@ -130,6 +153,20 @@ class DailyPlanner:
             start, end = start.astimezone(ZoneInfo(cfg.timezone)), end.astimezone(ZoneInfo(cfg.timezone))
             if start.date() != now.date() or end.date() != now.date() or end.timestamp() <= time.time():
                 raise ValueError("任务超出当日或已经过期")
+            window = cfg.schedule_window_seconds(item.type, (end-start).total_seconds())
+            earliest = max(start.timestamp(), now.timestamp(), time.time())
+            if previous_end is not None:
+                # An explicit rest already provides a break; don't add another gap around it.
+                gap = 0 if item.type=='rest' or tasks[-1]['type']=='rest' else cfg.schedule_gap_minutes * 60
+                earliest = max(earliest, previous_end + gap)
+            if item.type != 'rest':
+                for rest in occupied_rests:
+                    if earliest < rest['deadline'] and earliest+window > rest['earliest']:
+                        earliest = rest['deadline']
+            start = datetime.fromtimestamp(earliest, ZoneInfo(cfg.timezone))
+            end = min(start + timedelta(seconds=window), start.replace(hour=23,minute=59,second=59,microsecond=0))
+            if start.date() != now.date() or (end-start).total_seconds()<10:
+                raise ValueError("日程与休息时段无法放入当天，请减少任务或调整间隔")
             if any(type(x) is not int or x < 0 or x >= index for x in item.depends_on):
                 raise ValueError("任务依赖必须是前序任务索引，禁止循环")
             if item.type not in ("rest", "memory", "review"):
@@ -150,9 +187,12 @@ class DailyPlanner:
                     parse_video(item.query)
                     total_items += 1
                 if item.type!='read_comments':total_duration += item.max_duration_seconds
-            tasks.append({"id": ids[index], "type": item.type, "earliest": max(start.timestamp(), time.time()), "deadline": end.timestamp(),
-                          "duration": min(item.max_duration_seconds, cfg.task_timeout_seconds),
-                          "dependencies": [ids[x] for x in item.depends_on], "payload": item.model_dump()})
+            duration = min(item.max_duration_seconds, cfg.task_timeout_seconds, int((end-start).total_seconds()))
+            task_payload = {**item.model_dump(), "earliest_start": start.isoformat(), "deadline": end.isoformat(),
+                            "max_duration_seconds": duration}
+            tasks.append({"id": ids[index], "type": item.type, "earliest": start.timestamp(), "deadline": end.timestamp(),
+                          "duration": duration, "dependencies": [ids[x] for x in item.depends_on], "payload": task_payload})
+            previous_end = end.timestamp()
         if total_items > cfg.max_videos or total_duration > cfg.max_browse_seconds or comment_sessions>cfg.max_comment_sessions:
             raise ValueError("计划超过每日数量或时间预算")
         return tasks

@@ -5,6 +5,16 @@ from zoneinfo import ZoneInfo
 from maibot_sdk import Field, PluginConfigBase
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+DEFAULT_COMMENT_PROMPT = (
+    "按麦麦现有的人格和表达习惯，像参与讨论的观众一样说话。围绕已取得资料里的一个具体细节，"
+    "表达简短的看法、感受或一个确实好奇的问题，通常一两句即可，不必每次都提问。"
+    "没有具体想说的就不评论。避免助手汇报、学习笔记、总结报告和空泛夸赞，"
+    "不要用‘我记下了’‘已记录’‘受益匪浅’等套话，不列提纲，不复述整段视频。"
+    "不刻意堆网络梗、口头禅或假装熟悉作者，不编造亲身经历、身份或完整观看经历。"
+    "引用与选择依据放在结构化字段里，不写进评论正文；不自动承诺收藏、学习或采取行动。"
+    "回复先回应对方的具体内容，无新增信息时结束。主人提及由程序添加。"
+)
+
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -16,10 +26,17 @@ class Settings(BaseModel):
     planner_enabled: bool = True
     adaptive_schedule_enabled: bool = True
     max_dynamic_tasks: int = 3
+    schedule_task_minutes: int = 30
+    schedule_gap_minutes: int = 30
+    schedule_brief_minutes: int = 15
+    schedule_rest_minutes: int = 60
+    schedule_rest_max_minutes: int = 180
     browsing_enabled: bool = True
     comments_enabled: bool = True
     replies_enabled: bool = True
     auto_publish_comments: bool = False
+    comment_prompt: str = DEFAULT_COMMENT_PROMPT
+    comment_avoid_phrases: List[str] = ["我记下了", "我记住了", "已记录", "受益匪浅", "值得深入探讨", "作为AI"]
     auto_publish_replies: bool = False
     review_enabled: bool = True
     persona_guidance: str = ""
@@ -85,6 +102,12 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
+        if not 3 <= self.schedule_task_minutes <= 60 or not 0 <= self.schedule_gap_minutes <= 180:
+            raise ValueError("日程窗口须为3..60分钟，任务间隔须为0..180分钟")
+        if not 5 <= self.schedule_brief_minutes <= 30 or not 15 <= self.schedule_rest_minutes <= self.schedule_rest_max_minutes <= 360:
+            raise ValueError("整理与回复窗口须为5..30分钟，休息范围须满足15≤最短≤最长≤360分钟")
+        if len(self.comment_prompt) > 3000 or len(self.comment_avoid_phrases) > 30 or any(not x.strip() or len(x) > 80 for x in self.comment_avoid_phrases):
+            raise ValueError("评论提示词最长3000字，避免表达最多30项，每项1..80字")
         bounds = {"max_comment_sessions": (0,20), "max_comments_read": (1,20), "max_dynamic_tasks": (0, 10), "max_videos": (0, 20), "max_video_seconds": (30, 7200), "max_browse_seconds": (60, 14400),
                   "max_comments": (0, 10), "max_replies": (0, 20), "max_per_video": (1, 3),
                   "max_thread_rounds": (1, 5), "cooldown_seconds": (60, 86400),
@@ -119,6 +142,17 @@ class Settings(BaseModel):
         if set(self.prompt_overrides) - {"plan", "discover", "adapt", "read_comments", "select", "understand", "decide", "comment", "reply", "memory", "evolution", "review"}:
             raise ValueError("提示词补充含未知阶段")
         return self
+
+    def schedule_window_seconds(self, kind, requested=None):
+        """Calendar occupancy is distinct from a model/HTTP execution timeout."""
+        if kind == 'rest':
+            lower, upper = self.schedule_rest_minutes, self.schedule_rest_max_minutes
+        elif kind in ('draft','publish','replies','memory','review','adapt'):
+            lower, upper = min(5,self.schedule_brief_minutes), self.schedule_brief_minutes
+        else:
+            lower, upper = min(15,self.schedule_task_minutes), self.schedule_task_minutes
+        desired = (lower if kind == 'rest' else upper) * 60 if requested is None else requested
+        return max(lower*60,min(desired,upper*60))
 
 
 class PluginSection(PluginConfigBase):

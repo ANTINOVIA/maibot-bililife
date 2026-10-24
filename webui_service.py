@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import asyncio
 import json
@@ -23,6 +23,7 @@ class WebUIService:
         if section == "overview":
             return {"account": engine.account_status, "modules":{key:getattr(engine.config(),key) for key in ("planner_enabled","browsing_enabled","comments_enabled","replies_enabled","auto_publish_comments","auto_publish_replies","memory_enabled","evolution_enabled","review_enabled")}, "paused": engine.paused,
                     "posting_stopped": engine.posting_stopped, "blocked": engine.blocked, "timezone": engine.config().timezone,
+                    "rest_until": await asyncio.to_thread(engine.rest_until),
                     "current_task": {k: engine.current[k] for k in ("id", "type", "day", "deadline")} if engine.current else None,
                     "budget": await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (engine.day(),)),
                     "progress": await self.store.call("rows", "SELECT state,COUNT(*) AS count FROM tasks WHERE day=? GROUP BY state", (engine.day(),)),
@@ -353,7 +354,7 @@ class WebUIService:
         zone=ZoneInfo(self.engine.config().timezone)
         day=args.get("date",self.engine.day())
         start=datetime.fromisoformat(day+"T"+args.get("start",self.engine.now().strftime("%H:%M"))).replace(tzinfo=zone)
-        end=datetime.fromisoformat(day+"T"+args.get("end","23:59")).replace(tzinfo=zone)
+        end=datetime.fromisoformat(day+"T"+args["end"]).replace(tzinfo=zone) if "end" in args else min(start+timedelta(seconds=self.engine.config().schedule_window_seconds(kind)),start.replace(hour=23,minute=59,second=59))
         duration=args.get("duration",self.engine.config().task_timeout_seconds)
         if type(duration) is not int or not 10<=duration<=self.engine.config().task_timeout_seconds or end<=start or end.timestamp()<=time.time() or (start.date()-self.engine.now().date()).days not in range(0,8):
             raise ValueError("请选择今后七天内有效时段，执行时限不能超过任务超时")

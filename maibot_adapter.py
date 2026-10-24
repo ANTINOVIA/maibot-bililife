@@ -37,6 +37,9 @@ class MaiBotAdapter:
         system = (self.prompts["common"] + "\n" + self.prompts[stage] + "\n人格：" + dump(persona)
                   + "\n管理员补充：" + cfg.prompt_overrides.get(stage, "")
                   + "\n输出 JSON Schema：" + dump(schema.model_json_schema()))
+        if stage in ("comment", "reply", "decide"):
+            system += "\n管理员的评论与回复风格要求：" + cfg.comment_prompt
+            system += "\n正文避免使用的表达：" + dump(cfg.comment_avoid_phrases)
         content = dump({"external_data": external})
         if len(content) > 35000:
             raise ValueError("模型输入超过分段预算")

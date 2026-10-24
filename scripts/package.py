@@ -4,8 +4,9 @@ import hashlib
 import json
 
 root=Path(__file__).resolve().parents[1]
-version=json.loads((root/'_manifest.json').read_text(encoding='utf-8'))['version']
-target=root/'dist'/f'maibot-bililife-{version}.zip'
+manifest=json.loads((root/'_manifest.json').read_text(encoding='utf-8'))
+version=manifest['version']
+target=root/'dist'/f'{manifest["id"]}-{version}.zip'
 target.parent.mkdir(exist_ok=True)
 excluded={'.git','.venv','.venv312','__pycache__','.pytest_cache','dist','data'}
 files=[]

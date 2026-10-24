@@ -5,6 +5,8 @@
 
 根据 MaiBot 的人格、兴趣和近期经历安排 B 站生活：自主发现内容，理解视频或只阅读评论，决定是否互动，保存带来源的经历，并在后续对话中检索使用。通过 MaiBot 自带 WebUI 管理，无需独立前端或数据库服务。
 
+插件 ID：**`ANTINOVA.maibot-bililife`**。已有安装需要按 [ID 迁移说明](docs/ID_MIGRATION.md) 移动原配置、账号和数据，避免作为第二份插件运行。
+
 本文对应当前 **0.2.6 发布源码与安装包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
 
 ## 导航
@@ -53,7 +55,7 @@ flowchart LR
 
 适配环境为 **MaiBot 1.3.14 / maibot-plugin-sdk 2.16.0 / Dashboard 1.9.8 / Python 3.12**。清单将宿主与 SDK 限定在上述版本；其他版本需要重新适配。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
 
-1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
+1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `ANTINOVA.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
 2. 打开 BiliLife **设置总览**生成二维码，使用 B 站客户端完成独立扫码。
 3. 在**模型**选择文本模型及需要的媒体模型；在**浏览与理解**选择理解方式、兴趣主题与每日额度。
 4. 在**每日安排**生成计划或等待自动生成。日程可包含只读评论，不要求预先指定视频。
@@ -61,7 +63,11 @@ flowchart LR
 
 只取得标题与简介时标记为“元数据浏览”。字幕、画面和媒体片段保留实际范围；只读评论不冒充看过视频，也不据此发布视频评论。视频输入为有界片段，不是无限实时视频流。
 
+视频理解的每条 `details` 可在 `evidence_id` 指定一个已提供的来源：字幕的 `source_id`（例如 `subtitle_3`）、元数据的 `metadata:title` / `metadata:description`，或一个完整媒体标签（例如 `frame_1@20.0s`、`video_segment_1@0-90s`、`audio_segment_1@0-90s`，位置以实际资料为准）。此时 `evidence_quote` 可为空，由后端填入该来源前 180 字以内的原文；也可直接逐字填写引用。两个字段同时填写时，引用必须属于指定来源。后端仅兼容空白差异及时间相邻字幕的断句，并保存匹配到的原文，不接受改写或拼接远距离抽样。观察描述写入 `details[].text`，不能用自行概括、OCR 或听写替代已取得的原文。校验失败后携带上次结果和错误条目修复一次，两次均失败则任务报错，不生成发布草稿；脱敏日志记录失败引用和来源编号。来源编号用于定位资料，并不代表对模型观点的事实认证。
+
 ## 配置文件与保存规则
+
+“重新排队”只恢复任务执行状态，不扣除或重置额度。同一天、同一视频分 P 的重试共用一次视频条数和浏览时长额度，记录持久保存，重启后继续生效；跨日再次执行按实际执行日结算。重试实际产生的模型调用、Token 和下载流量仍照常计入资源消耗。重新排队不会返还已发生的消耗，也不会解除评论发布限制或重发结果未知的操作。
 
 | 文件 | 内容与入口 |
 | --- | --- |
@@ -97,6 +103,11 @@ flowchart LR
 | `planner_enabled` | bool | `true` | true / false | 自动在 plan_time 后为当日生成主计划；关闭后仍可手动生成，不会取消已有计划。 |
 | `adaptive_schedule_enabled` | bool | `true` | true / false | 视频理解后允许麦麦评估并追加日程；关闭后不再触发新的自主追加。 |
 | `max_dynamic_tasks` | int | `3` | 0～10 | 每天自主追加的任务总数上限，0 表示不追加；单次模型提议最多 2 项。 |
+| `schedule_task_minutes` | int | `30` | 3～60 分钟 | 浏览、发现和只读评论的时段上限；自动计划通常规范到 15 分钟至此值之间（上限低于 15 时以用户上限为准），即时浏览、后续观看与手动插入的默认时段也使用此值。与后台执行超时分开。显式手动填写结束时间时保留用户时段，不改动已有任务。 |
+| `schedule_brief_minutes` | int | `15` | 5～30 分钟 | 回复、评论、记忆整理和复盘采用较轻量的时段，自动计划为 5 分钟至此值之间，默认入队窗口使用此值。后台实际调用仍受 task_timeout_seconds 限制。 |
+| `schedule_gap_minutes` | int | `30` | 0～180 分钟 | 同一批相邻活动之间的最小自由间隔，也用于分开多个后续观看；显式休息前后不重复添加间隔。0 允许连续安排。过密提议会顺延，超出当天或活跃范围则校验失败。 |
+| `schedule_rest_minutes` | int | `60` | 15～360 分钟，且 ≤schedule_rest_max_minutes | 自动休息的最短时段，也是手动插入未填写结束时间时的默认休息长度。新浏览和发布在休息区间内暂停；内部整理和发布结果核对仍可运行。可从日程删除该休息项提前结束。 |
+| `schedule_rest_max_minutes` | int | `180` | 15～360 分钟，且 ≥schedule_rest_minutes | 自动休息时段的上限，允许午休或放空有不同长度；临近业务日结束时按剩余当日时间截断，不跨日延伸。未排任务的空白也可保留为自由时间。 |
 | `timezone` | str | `"Asia/Shanghai"` | 有效 IANA 时区 | 决定业务日期、活跃时段、计划与额度归属。已有发布记录时 API 拒绝更改，需先处理额度迁移。 |
 | `plan_time` | str | `"09:00"` | HH:MM | 每日到此时间后，若无有效主计划及待执行生成任务则自动入队；停机后当日恢复也会补检查。 |
 | `active_start` | str | `"09:00"` | HH:MM | 浏览、只读评论、发布和回复任务的活跃开始时间；与结束时间相同时仅该分钟活跃。 |
@@ -130,6 +141,8 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | `comments_enabled` | bool | `true` | true / false | 控制视频评论草稿和发布；关闭时 auto_publish_comments 自动归零。已有草稿保留。 |
 | `auto_publish_comments` | bool | `false` | true / false | 开启后，麦麦生成且满足规则的评论草稿自动入队，无需逐条确认；人工草稿不会被自动接管。仍受暂停、停发、范围、额度和去重约束。 |
+| `comment_prompt` | str | 内置中文风格要求，完整默认值见 [settings.example.toml](settings.example.toml) 的 comments 节 | 0～3000 字符 | 评论与回复的可编辑风格提示词，也用于互动判断。默认按宿主人格回应一个具体细节，通常一两句，避免助手汇报、学习承诺、报告式总结和空泛夸赞；证据不足时保持沉默。不修改核心人格与权限。保存后影响后续生成，已有草稿不自动重写。空字符串表示不添加这段管理员风格要求，内置证据与权限规则仍生效。 |
+| `comment_avoid_phrases` | list[str] | `["我记下了","我记住了","已记录","受益匪浅","值得深入探讨","作为AI"]` | 最多 30 项；每项 1～80 字符且非全空白 | 生成后、入发送流程前及实际发送前检查评论与回复正文，兼容全半角、空白和标点差异。命中时生成阶段最多重写一次，仍命中则停止保存/发布；已有或人工草稿命中也不能发布。主人提及名称不参与表达检查。`[]` 关闭这项措辞检查，其他发布检查继续生效。 |
 | `owner_uid` | str | `""` | 空字符串或 ASCII 正整数；长度 ≤19 且 <2^63 | 主人 B 站 UID；留空不添加提醒。非空时解析真实账号名称与平台提及字段，不用 @数字 冒充提及。 |
 | `mention_owner` | bool | `true` | true / false | 新生成的视频评论是否追加主人提醒；需要 owner_uid 非空且不同于当前账号。不自动修改旧草稿，回复不反复追加。 |
 | `max_comments` | int | `1` | 0～10 条/日 | 每日视频评论上限；待发送、发送中、未知和成功操作均参与额度检查，0 阻止发布。 |
@@ -325,7 +338,7 @@ api_key = "替换为你的APIKey"
 
 ## 公共接口调用约定
 
-插件标识为 `local.maibot-bililife`，下述 25 个 API 注册版本均为 `"1"`。WebUI 使用宿主自定义页面 v2 桥接，所有九个页面声明同一组接口。以下 JavaScript 示例在宿主注入了 `maibot` 的插件页面上下文中执行，不是可直接运行的普通独立网页。
+插件标识为 `ANTINOVA.maibot-bililife`，下述 25 个 API 注册版本均为 `"1"`。WebUI 使用宿主自定义页面 v2 桥接，所有九个页面声明同一组接口。以下 JavaScript 示例在宿主注入了 `maibot` 的插件页面上下文中执行，不是可直接运行的普通独立网页。
 
 ```javascript
 // 查询：返回插件结果；桥接传输失败会抛出异常。
@@ -343,8 +356,8 @@ if (saved?.ok === false) throw new Error(saved.error);
 宿主还提供经过认证的 HTTP 桥接。在已配置的 MaiBot 地址下，POST：
 
 ```text
-/api/webui/plugins/runtime/webui/local.maibot-bililife/overview/queries/{查询名}
-/api/webui/plugins/runtime/webui/local.maibot-bililife/overview/actions/{操作名}
+/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/queries/{查询名}
+/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/actions/{操作名}
 ```
 
 请求体为 `{"args":{...参数...}}`。成功桥接的 HTTP 响应通常为 `{"success":true,"result":<插件返回值>}`；插件业务校验仍可能在 result 内返回 `{"ok":false,"error":"脱敏错误说明"}`，不能只检查 HTTP 200 或宿主 success。桥接鉴权与传输错误由宿主处理，不承诺统一为上述业务结构。
@@ -353,7 +366,7 @@ if (saved?.ok === false) throw new Error(saved.error);
 # maibot.cookies 是你在受保护位置准备的有效宿主会话 Cookie 文件。
 # MAIBOT_URL 替换为实际宿主地址，不在 URL 中附带 Token。
 curl --request POST \
-  "$MAIBOT_URL/api/webui/plugins/runtime/webui/local.maibot-bililife/overview/queries/snapshot" \
+  "$MAIBOT_URL/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/queries/snapshot" \
   --cookie maibot.cookies --header 'Content-Type: application/json' \
   --data '{"args":{"section":"overview","page":1}}'
 ```
@@ -400,7 +413,7 @@ await maibot.query("snapshot", {section: "schedule_board"});
 从 schedule 到 summaries 的普通列表以及 comment_drafts/reply_drafts 返回 `{"items":[...],"page":1,"pages":1,"total":0}`；空列表的 pages 仍为 1。列表中的 payload、usage、data 等 JSON 文本一般保留字符串，详细解析规则见 detail。时间戳为 Unix 秒，前端按业务时区显示。
 
 
-overview 中的 account 为 `{state,uid,name}`；current_task 为 `{id,type,day,deadline}` 或 null；budget 项为 `{day,resource,used}`；progress 项为 `{state,count}`；summaries 项为 `{day,text}`。health 含 ffmpeg、concurrency、host_long_term_memory、memory_method、asr_enabled，是运行时健康快照；修改配置后的有效值以 settings 为准。modules 为模块启用布尔值集合。
+overview 中的 account 为 `{state,uid,name}`；current_task 为 `{id,type,day,deadline}` 或 null；rest_until 是当前休息结束的 Unix 秒数，无休息时为 0；budget 项为 `{day,resource,used}`；progress 项为 `{state,count}`；summaries 项为 `{day,text}`。health 含 ffmpeg、concurrency、host_long_term_memory、memory_method、asr_enabled，是运行时健康快照；修改配置后的有效值以 settings 为准。modules 为模块启用布尔值集合。
 
 schedule_board.items 为完整 tasks 行，payload 解析成对象；deleted 项含 id/type/state/reason/created；adaptations 项含 video_id/state/payload/created，其中 payload 已解析。plan 为 id/version/reason 加已解析 payload。普通列表保留数据库数值标志（例如 frozen、active、rolled_back 为 0/1），不统一转成布尔值。
 
@@ -520,7 +533,7 @@ await maibot.action("enqueue", {kind: "read_comments", data: JSON.stringify({que
 | `account` | `{}` | state、uid、name，并更新总览账号状态 |
 | `login` | `{}`；扫码任务时限 240 秒，二维码显示有效期约 180 秒 | result（登录结果说明）；二维码由 qr 查询 |
 | `reconcile` | `{}` | operation_id/status 数组；不能唯一确认则仍为 unknown |
-| `rest` | reason：str，默认“计划休息” | rested=true、reason；标记一次休息任务完成，不会阻塞线程睡满整个时段 |
+| `rest` | reason：str，默认“计划休息” | rested=true、reason；即时记录休息开始，调度与发布入口依据持久化的 earliest/deadline 在整个区间阻止新的浏览和发布，重启后继续生效，不通过长时间 sleep 占用执行器 |
 
 自主检索的 query 长度要求 1～80，不能命中排除词，且须包含允许主题之一；视频最终仍会再次检查范围。推荐流可用性取决于当前账号和平台，失败如实记录。`publish`、`model_test` 使用各自专用入口，`adapt` 仅由内部经历触发，不能通过此 API 任意入队。kind 参数白名单不等于所有 payload 字段都有独立 Schema；例如 revise 不应传字符串布尔值，调用方应按上表类型发送。
 
@@ -561,7 +574,7 @@ await maibot.action("schedule_change", {
 | action | data 字段与影响 |
 | --- | --- |
 | `regenerate` | 仅 reason；入队 plan，revise=true，成功后新主计划成为有效版本，取消旧计划未完成任务，手动独立日程保留 |
-| `insert` | kind 必填，可为 watch/discover/explore/read_comments/draft/replies/memory/review/rest；payload 默认 {}、按 enqueue 对应白名单校验；date 默认今天；start 默认当前 HH:MM；end 默认 23:59；duration 默认 task_timeout_seconds，须为整数 10～该设置；另含 reason |
+| `insert` | kind 必填，可为 watch/discover/explore/read_comments/draft/replies/memory/review/rest；payload 默认 {}、按 enqueue 对应白名单校验；date 默认今天；start 默认当前 HH:MM；end 未填写时按任务类型使用浏览、轻量整理或休息的默认时段，不跨日；duration 默认 task_timeout_seconds，须为整数 10～该设置；另含 reason |
 | `delete` | task_id 必填，另可传 reason；未完成任务会取消并写显示墓碑，已完成记录只隐藏；运行中的普通任务会收到取消，running/unknown 的 publish 任务拒绝删除 |
 | `restore` | task_id 必填，另可传 reason；只移除显示墓碑，不重新执行已取消任务 |
 

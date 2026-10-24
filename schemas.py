@@ -68,7 +68,8 @@ class CommentUnderstanding(Strict):
 class Detail(Strict):
     claim_type: Literal["author_claim", "checkable_detail", "personal_opinion"]
     text: str = Field(max_length=250)
-    evidence_quote: str = Field(max_length=250)
+    evidence_quote: str = Field(default="", max_length=250)
+    evidence_id: str = Field(default="", max_length=100)
 
 
 class Understanding(Strict):

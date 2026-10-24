@@ -4,9 +4,9 @@
 端口和安装位置，不要猜测账户。私钥仅由 SSH 客户端使用，不得复制进插件或安装包。
 
 宿主 `/opt/maibot` 使用 Python 3.12.15、uv 管理环境，由 `maibot.service` 启动。
-插件安装路径 `/opt/maibot/plugins/local_maibot-bililife`。
-持久化路径 `/opt/maibot/data/plugins/local.maibot-bililife`。
-临时媒体目录由 `ctx.paths.runtime_dir` 注入，默认 `/opt/maibot/temp/plugins/local.maibot-bililife`。
+插件安装路径 `/opt/maibot/plugins/ANTINOVA_maibot-bililife`。
+持久化路径 `/opt/maibot/data/plugins/ANTINOVA.maibot-bililife`。
+临时媒体目录由 `ctx.paths.runtime_dir` 注入，默认 `/opt/maibot/temp/plugins/ANTINOVA.maibot-bililife`。
 没有新建公网服务；页面通过宿主 WebUI v2 桥接调用后端。
 
 ## 首次安装
@@ -20,7 +20,7 @@ FFmpeg 是可选系统依赖；本服务器已从 Debian 仓库安装，不依�
 ## 本次访问方式
 
 服务器 WebUI 只监听本机 8001。当前工作机 SSH 隧道入口：
-`http://127.0.0.1:18001/extensions/local.maibot-bililife/overview`。
+`http://127.0.0.1:18001/extensions/ANTINOVA.maibot-bililife/overview`。
 用现有 MaiBot WebUI 登录方式进入，B 站登录在插件设置页单独扫码。
 不要把 WebUI Token 放进 URL 或文档。
 
@@ -32,12 +32,14 @@ ssh -i <私钥路径> -p <SSH端口> -o IdentitiesOnly=yes -o StrictHostKeyCheck
 
 ## 升级
 
+首次切换到新插件 ID 时，先按 [ID 迁移与回滚](ID_MIGRATION.md) 操作；下面的升级和源码恢复脚本用于新 ID 内的后续维护。
+
 本地先运行测试、构建和打包，核对 SHA256，将 ZIP 上传服务器 `/tmp/`。
 `scripts/deploy_server.py ZIP SHA256` 只操作本插件目录；升级前暂停、备份源码与在线 SQLite
 快照，利用宿主配置接口卸载再加载，不重启 MaiBot 主进程。示例：
 
 ```sh
-/opt/maibot/.venv/bin/python /tmp/deploy_server.py /tmp/maibot-bililife-0.2.6.zip <本地生成的SHA256>
+/opt/maibot/.venv/bin/python /tmp/deploy_server.py /tmp/ANTINOVA.maibot-bililife-0.2.6.zip <本地生成的SHA256>
 ```
 
 脚本在 `/opt/maibot-bililife-backups/时间戳/` 保留私有备份与宿主源码哈希基线。
@@ -56,7 +58,8 @@ WebUI 运行日志页“备份数据库”使用 SQLite online backup，能一�
 `model-secrets.json`（存在时）；不要把这些私有备份上传到源码仓库或发到本地验收报告。
 WebUI 数据库备份只附带不含密钥的模型路由快照。
 
-迁移由 `migrations/001_initial.sql`、`002_module_controls.sql`、`003_autonomous_life.sql`、`004_comment_reading.sql` 和 `schema_version` 管理。升级前留快照；
+迁移由 `migrations/001_initial.sql`、`002_module_controls.sql`、`003_autonomous_life.sql`、`004_comment_reading.sql`、`005_budget_reservations.sql` 和 `schema_version` 管理。升级前留快照；
+迁移5保存按日、按视频分 P 的浏览额度占用。旧记录已有证据时补记首次浏览当日的占用标识，保留原额度账目，不自动修改历史消耗；重试沿用占用，实际模型调用和流量继续据实记录。
 本版本不修改宿主数据表。未来破坏性迁移必须提供向前兼容方案或停机恢复说明。
 
 源码回滚默认保留当前数据库，防止丢失远端已成功或未知的发布记录。

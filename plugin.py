@@ -7,6 +7,7 @@ from maibot_sdk import API, MaiBotPlugin, Tool
 from pydantic import ValidationError
 
 from .configuration import PluginConfig
+from .identity import PLUGIN_ID
 from .security import redact
 from .task_executor import TaskExecutor
 from .webui_service import WebUIService
@@ -30,7 +31,7 @@ class BiliLifePlugin(MaiBotPlugin):
         except BaseException:
             await self.engine.stop()
             raise
-        self.ctx.logger.info("BiliLife 0.2.6 已加载；各模块独立配置，宿主长期记忆写入接口不受支持")
+        self.ctx.logger.info("%s 0.2.6 已加载；各模块独立配置，宿主长期记忆写入接口不受支持", PLUGIN_ID)
 
     async def on_unload(self) -> None:
         if self.engine is not None:

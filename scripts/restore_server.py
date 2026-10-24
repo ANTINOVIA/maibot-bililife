@@ -18,11 +18,11 @@ backup=Path(args.backup).resolve()
 if not backup.is_relative_to(base) or backup==base or not (backup/'plugin/_manifest.json').is_file():
     raise SystemExit('备份目录不在受控位置或缺少插件源码')
 manifest=json.loads((backup/'plugin/_manifest.json').read_text())
-if manifest['id']!='local.maibot-bililife':
+if manifest['id']!='ANTINOVA.maibot-bililife':
     raise SystemExit('备份插件 ID 不匹配')
 root=Path('/opt/maibot')
-destination=root/'plugins/local_maibot-bililife'
-dbpath=root/'data/plugins/local.maibot-bililife/bililife.sqlite3'
+destination=root/'plugins/ANTINOVA_maibot-bililife'
+dbpath=root/'data/plugins/ANTINOVA.maibot-bililife/bililife.sqlite3'
 saved=backup/'bililife.sqlite3'
 if args.data:
     if not saved.exists():
@@ -39,8 +39,8 @@ if args.check:
     raise SystemExit()
 token=json.loads((root/'data/webui.json').read_text())['access_token']
 with httpx.Client(base_url='http://127.0.0.1:8001',cookies={'maibot_session':token},timeout=90) as c:
-    toggle='/api/webui/plugins/config/local.maibot-bililife/toggle'
-    c.post('/api/webui/plugins/runtime/webui/local.maibot-bililife/overview/actions/control',json={'args':{'action':'pause'}})
+    toggle='/api/webui/plugins/config/ANTINOVA.maibot-bililife/toggle'
+    c.post('/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/actions/control',json={'args':{'action':'pause'}})
     r=c.post(toggle)
     r.raise_for_status()
     if r.json().get('enabled'):

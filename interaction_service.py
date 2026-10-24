@@ -5,7 +5,7 @@ import json
 import time
 
 from .schemas import Draft, InteractionDecision
-from .security import guard_unobserved_senses, safe_public_text, similar
+from .security import guard_unobserved_senses, normalized, safe_public_text, similar
 from .storage import dump, uid
 from .vendor.client import LoginRequired, PlatformError, PublishNotSent, UnknownPublish
 from .video_understanding import evidence_text
@@ -19,6 +19,12 @@ class InteractionService:
     def __init__(self, engine):
         self.engine = engine
         self.store, self.host, self.platform = engine.store, engine.host, engine.platform
+
+    @staticmethod
+    def style_matches(text, config):
+        body = normalized(text)
+        return [phrase for phrase in config.comment_avoid_phrases
+                if normalized(phrase) and normalized(phrase) in body]
 
     async def create_draft(self, video_id, incoming=None):
         cfg = self.engine.config()
@@ -41,7 +47,16 @@ class InteractionService:
             await self.store.call("audit", "silent", {"video_id": video_id, "reason": decision.reason})
             return {"drafted": False, "reason": decision.reason}
         context["decision"] = decision.model_dump()
-        draft = await self.host.generate("reply" if incoming else "comment", context, Draft)
+        for attempt in range(2):
+            draft = await self.host.generate("reply" if incoming else "comment", context, Draft)
+            matches = self.style_matches(draft.text, self.engine.config())
+            if not matches:
+                break
+            await self.store.call("audit", "comment_style_repair", {"video_id": video_id, "attempt": attempt + 1, "matched_phrases": matches})
+            if attempt:
+                raise PolicyBlocked("评论两次包含配置中避免使用的表达，未保存或发布")
+            context["style_feedback"] = {"previous_draft": draft.model_dump(), "avoid_phrases": matches,
+                                         "instruction": "按管理员风格要求重新写，直接回应一个具体内容，避免助手汇报和套话；不要仅通过插入标点或空格规避表达检查。保留真实来源引用。"}
         text = evidence_text(metadata, evidence) + ("\n" + incoming["text"] if incoming else "")
         discussion=text+'\n'+'\n'.join(row['text'] for row in comment_context)
         if not draft.evidence_quote or draft.evidence_quote not in text or decision.evidence_quote not in discussion:
@@ -66,7 +81,7 @@ class InteractionService:
 
     async def queue_automatic(self):
         cfg=self.engine.config()
-        if self.engine.paused or self.engine.posting_stopped or self.engine.blocked or not self.engine.active():
+        if self.engine.paused or self.engine.posting_stopped or self.engine.blocked or not self.engine.activity_allowed():
             return []
         if not (cfg.auto_publish_comments or cfg.auto_publish_replies):
             return []
@@ -84,7 +99,7 @@ class InteractionService:
     async def publish(self, draft_id, manual=False):
         self.engine.check()
         cfg = self.engine.config()
-        if self.engine.paused or self.engine.posting_stopped or not self.engine.active():
+        if self.engine.paused or self.engine.posting_stopped or not self.engine.activity_allowed():
             raise PolicyBlocked("发布已停止或不在允许时段")
         await self.platform.check_account()
         rows = await self.store.call("rows", "SELECT * FROM drafts WHERE id=?", (draft_id,))
@@ -92,6 +107,11 @@ class InteractionService:
             raise PolicyBlocked("草稿不存在或已进入发送流程")
         draft = rows[0]
         mentions=await self.store.call("rows","SELECT uid,name FROM draft_mentions WHERE draft_id=?",(draft_id,))
+        style_text = draft["text"]
+        for mention in mentions:
+            style_text = style_text.replace('@' + mention['name'] + ' ', '')
+        if self.style_matches(style_text, self.engine.config()):
+            raise PolicyBlocked("评论包含配置中避免使用的表达，请修改正文或调整评论设置")
         if mentions and (not cfg.mention_owner or any(row['uid']!=cfg.owner_uid for row in mentions)):
             raise PolicyBlocked("主人提醒配置已改变，请重新生成草稿")
         enabled = cfg.replies_enabled if draft["kind"]=="reply" else cfg.comments_enabled
@@ -155,7 +175,8 @@ class InteractionService:
             except Exception:
                 return False
             current = self.engine.config()
-            return (not self.engine.paused and not self.engine.posting_stopped and self.engine.active() and self.platform.uid == draft["account"]
+            return (not self.engine.paused and not self.engine.posting_stopped and self.engine.activity_allowed() and self.platform.uid == draft["account"]
+                    and not self.style_matches(style_text, current)
                     and (not mentions or (current.mention_owner and all(row['uid']==current.owner_uid for row in mentions)))
                     and (current.replies_enabled if draft["kind"]=="reply" else current.comments_enabled)
                     and (manual or (current.auto_publish_replies if draft["kind"]=="reply" else current.auto_publish_comments)))

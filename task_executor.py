@@ -31,6 +31,11 @@ from .video_understanding import VideoUnderstanding
 class TaskCancelled(RuntimeError):
     pass
 
+class RestPeriod(RuntimeError):
+    def __init__(self, until):
+        super().__init__('处于计划休息时段，等待休息结束')
+        self.until = until
+
 
 class TaskExecutor:
     def __init__(self, ctx, data, runtime):
@@ -99,6 +104,14 @@ class TaskExecutor:
         start, end = self.settings.active_start, self.settings.active_end
         return start <= value <= end if start <= end else value >= start or value <= end
 
+    def rest_until(self):
+        now=time.time()
+        rows=self.store.rows("SELECT MAX(t.deadline) AS until FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id WHERE t.type='rest' AND d.task_id IS NULL AND t.state NOT IN ('cancelled','skipped','expired','failed') AND t.earliest<=? AND t.deadline>?",(now,now))
+        return rows[0]['until'] or 0
+
+    def activity_allowed(self):
+        return self.active() and not self.rest_until()
+
     def validate_query(self, query):
         if not query or len(query) > 80 or any(x in query for x in self.settings.excluded_topics):
             raise PolicyBlocked("检索词为空、过长或命中排除主题")
@@ -126,6 +139,10 @@ class TaskExecutor:
             control = self.current["type"] in ("account", "login", "reconcile", "model_test")
             if self.paused and not control:
                 raise TaskCancelled("全部任务已暂停")
+            if self.current['type'] in ('watch','discover','explore','read_comments','publish','replies'):
+                until=self.rest_until()
+                if until:
+                    raise RestPeriod(until)
             if self.blocked and self.current["type"] in ("watch", "discover", "explore", "read_comments", "publish", "replies"):
                 raise PolicyBlocked(self.blocked)
             self.check_module(self.current["type"])
@@ -170,7 +187,9 @@ class TaskExecutor:
                 raise PolicyBlocked("UP 主必须先加入允许范围")
         if kind == "watch":
             parse_video(payload.get("query", payload.get("video", "")))
-        return await self.store.call("add_task", kind, payload, self.day(), earliest or time.time(), deadline or time.time() + 3600,
+        scheduled_start = earliest if earliest is not None else time.time()
+        scheduled_end = deadline if deadline is not None else min(scheduled_start + self.settings.schedule_window_seconds(kind), self.day_end())
+        return await self.store.call("add_task", kind, payload, self.day(), scheduled_start, scheduled_end,
                                      duration or self.settings.task_timeout_seconds,
                                      plan_id=self.current["plan_id"] if child and self.current else None,
                                      dependencies=dependencies or ([self.current["id"]] if child and self.current else []))
@@ -178,13 +197,13 @@ class TaskExecutor:
     async def schedule(self):
         now = self.now()
         if not self.paused:
-            if self.active() and not self.blocked and not self.posting_stopped and self.account_status["state"]=="authenticated":
+            if self.activity_allowed() and not self.blocked and not self.posting_stopped and self.account_status["state"]=="authenticated":
                 await self.interaction.queue_automatic()
             if self.settings.planner_enabled and now.strftime("%H:%M") >= self.settings.plan_time:
                 plans = await self.store.call("rows", "SELECT id FROM plans WHERE day=? AND active=1", (self.day(),))
                 pending = await self.store.call("rows", "SELECT id FROM tasks WHERE type='plan' AND day=? AND state IN ('queued','retry','running')", (self.day(),))
                 if not plans and not pending:
-                    await self.enqueue("plan", {}, deadline=self.day_end())
+                    await self.enqueue("plan", {})
             if self.settings.review_enabled and now.strftime("%H:%M") >= self.settings.review_time:
                 reviews = await self.store.call("rows", "SELECT created FROM summaries WHERE day=?", (self.day(),))
                 tasks = await self.store.call("rows", "SELECT id FROM tasks WHERE type='review' AND day=? AND state IN ('queued','retry','running')", (self.day(),))
@@ -192,9 +211,9 @@ class TaskExecutor:
                 review_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
                 attempts = await self.store.call("rows", "SELECT id FROM tasks WHERE type='review' AND day=? AND created>=?", (self.day(), review_at))
                 if (not reviews or reviews[0]["created"] < review_at) and not tasks and not attempts:
-                    await self.enqueue("review", {}, deadline=self.day_end())
+                    await self.enqueue("review", {})
             next_reply = await self.store.call("get", "next_reply", 0)
-            if self.settings.replies_enabled and self.active() and not self.blocked and self.account_status["state"] == "authenticated" and time.time() >= next_reply:
+            if self.settings.replies_enabled and self.activity_allowed() and not self.blocked and self.account_status["state"] == "authenticated" and time.time() >= next_reply:
                 await self.enqueue("replies", {})
                 await self.store.call("set", "next_reply", time.time() + self.settings.reply_interval_seconds)
         if time.time() >= await self.store.call("get", "next_cleanup", 0):
@@ -205,9 +224,9 @@ class TaskExecutor:
         while True:
             try:
                 await self.schedule()
-                task = await self.store.call("claim", self.owner, self.paused, self.active())
+                task = await self.store.call("claim", self.owner, self.paused, self.activity_allowed())
                 if task:
-                    if (self.paused and task["type"] not in ("login", "account", "reconcile", "model_test")) or (not self.active() and task["type"] in ("discover", "watch", "explore", "read_comments", "publish", "replies")):
+                    if (self.paused and task["type"] not in ("login", "account", "reconcile", "model_test")) or (not self.activity_allowed() and task["type"] in ("discover", "watch", "explore", "read_comments", "publish", "replies")):
                         await self.store.call("finish", task, "retry", error="暂停或休息时段", next_run=time.time() + 60)
                     else:
                         await self.run(task)
@@ -239,6 +258,8 @@ class TaskExecutor:
         except TaskCancelled as exc:
             state = "cancelled" if task["id"] in self.cancelled else "paused" if self.paused else "expired"
             await self.store.call("finish", task, state, error=str(exc))
+        except RestPeriod as exc:
+            await self.store.call('finish',task,'retry',error=str(exc),next_run=exc.until)
         except BudgetExceeded as exc:
             await self.store.call("finish", task, "budget_exhausted", error=str(exc))
         except (LoginRequired, PlatformError) as exc:
@@ -373,7 +394,12 @@ class TaskExecutor:
                 except PolicyBlocked:
                     skipped.append({"bvid": item["bvid"], "reason": "超出范围"})
                     continue
-                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic}, deadline=self.life_deadline(), child=True)
+                start = time.time() + len(chosen) * (self.settings.schedule_task_minutes + self.settings.schedule_gap_minutes) * 60
+                deadline = self.life_deadline(start)
+                if deadline-start < 30:
+                    skipped.append({"bvid": item["bvid"], "reason": "今天剩余活跃时段不足以安排短时观看"})
+                    continue
+                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic}, earliest=start, deadline=deadline, child=True)
                 chosen.append({"bvid": item["bvid"], "task_id": task_id, "reason": decision.reason})
                 if len(chosen) >= min(payload.get("max_items", 1), self.settings.max_videos):
                     break
@@ -382,10 +408,11 @@ class TaskExecutor:
         await self.store.call("audit", "discovery", {"chosen": chosen, "skipped": skipped})
         return {"query":payload.get("query",""),"reason":payload.get("reason",""),"chosen": chosen, "skipped": skipped}
 
-    def life_deadline(self):
+    def life_deadline(self, start=None):
         hour,minute=map(int,self.settings.active_end.split(":"))
         end=self.now().replace(hour=hour,minute=minute,second=59,microsecond=0).timestamp()
-        return min(self.day_end(),end if end>time.time() else self.day_end())
+        return min((start if start is not None else time.time()) + self.settings.schedule_window_seconds('watch'),
+                   self.day_end(),end if end>time.time() else self.day_end())
 
     async def watch(self, payload):
         metadata = await self.platform.metadata(payload.get("query", payload.get("video", "")))
@@ -406,7 +433,8 @@ class TaskExecutor:
                               (video_id, metadata["bvid"], metadata["page"], dump(metadata), "{}", "{}", "reading" if selection.browse else "skipped", reason, time.time()))
         if not selection.browse:
             return {"video_id": video_id, "skipped": True, "reason": reason}
-        await self.store.call("reserve", self.day(), {"videos": (1, self.settings.max_videos), "browse_seconds": (metadata["duration"], self.settings.max_browse_seconds)})
+        await self.store.call("reserve_once", self.day(), "watch:" + video_id,
+                              {"videos": (1, self.settings.max_videos), "browse_seconds": (metadata["duration"], self.settings.max_browse_seconds)})
         evidence, analysis = await self.understanding.analyze(metadata, video_id)
         analysis["topic"] = selection.topic
         await self.store.call("execute", "UPDATE videos SET evidence=?,analysis=?,state='understood' WHERE id=?", (dump(evidence), dump(analysis), video_id))

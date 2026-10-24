@@ -12,7 +12,7 @@ import time
 
 import httpx
 
-PLUGIN_ID='local.maibot-bililife'
+PLUGIN_ID='ANTINOVA.maibot-bililife'
 root=Path('/opt/maibot')
 archive=Path(sys.argv[1]).resolve()
 expected=sys.argv[2]
