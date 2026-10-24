@@ -256,6 +256,8 @@ max_replies = 2
 
 每个用途可选 `host:MaiBot模型名称`、独立提供商 `id`、`disabled`；宿主 embedding 模型不会列为路由选项。`host:` 后是宿主配置中的 `name`，不是服务商 model ID。独立条目必须声明对应用途。页面快照会把旧空路由显示为可推导的宿主模型或 disabled，但运行时空路由仍是 SDK 兼容路径。
 
+选择宿主模型时，文本、关键帧视觉和 ASR 通过 `ctx.llm` 调用；`audio` / `video` 原始片段理解因当前 SDK 缺少对应输入接口，由插件后端引用宿主模型 ID、地址与密钥，按所选协议直接请求模型提供商，不经过 `ctx.llm`，因此不能假定这些请求会进入宿主 SDK 的调用统计或统一路由。插件仍执行自身预算检查并记录调用；路径与取舍见 [模型说明](docs/MODEL_PROVIDERS.md)。
+
 `model_routes` 保存时必须提交完整五个路由键。带 `[host_options.audio]` / `[host_options.video]` 的输入只影响**宿主直接媒体模型**；独立模型使用自身字段。省略整个 host_options 保留原值，提交时按整个对象替换，不逐用途合并。
 
 ```toml
@@ -863,11 +865,15 @@ data_dir/
 
 媒体临时目录由宿主 `ctx.paths.runtime_dir` 提供。私有凭据文件使用后端受保护权限，不能放进源码、安装包、日志或公开配置。不要直接复制正在写入的 SQLite 文件；使用 backup 或部署脚本的 online backup。
 
+`security.py` 的 `redact` 基于正则匹配，可能误报或漏报，仅用于日志、审计和导出的补充脱敏，不是凭据隔离边界。凭据独立存储、公开响应限制字段以及供应商错误只保留错误码与分类说明，均先于这层兜底；不能把密钥放入普通数据后仅依赖它过滤。
+
 构建 WebUI：`python scripts/build_webui.py`；生成插件包：`python scripts/package.py`。运行需要宿主 SDK 和清单依赖，不通过安装 Python wheel 替代 MaiBot 插件导入。发行版本来自 `_manifest.json`，本 README 修改不改变版本。
 
 评论与回复发布存在一项私有依赖：`vendor/client.py` 的 `publish()` 使用 `bilibili-api-python==17.4.2` 的 `Api._prepare_request()` 准备签名请求，再由插件发送单次 POST，以避免通用请求包装器自动重试写请求。该方法不属于稳定公共 API，上游改变签名或返回结构可能导致发布失败；不要单独升级平台库。升级前的复核要求见 [私有接口依赖说明](docs/COMPATIBILITY.md#评论发布的私有接口依赖)。
 
 升级、卸载、凭据保护及恢复步骤见 [运维文档](docs/OPERATIONS.md)。恢复默认保留当前数据库和发布状态；恢复旧数据库若会丢弃或回退已有发布操作则被拒绝。回滚到旧媒体协议版本前，应暂停并恢复兼容路由；不以回滚为理由重新发送未知评论。
+
+安装、恢复和 ID 迁移脚本是管理员在服务器上手动执行的运维工具，会读取宿主 WebUI 管理凭据并以管理员身份操作本机接口；插件运行时不提供自动调用入口。权限与使用限制见 [手动运维工具](docs/OPERATIONS.md#手动运维工具与管理权限)。
 
 ## 许可证
 
