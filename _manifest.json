@@ -4,7 +4,7 @@
   "plugin_type": "integration",
   "version": "0.2.6",
   "name": "麦麦的 B 站生活",
-  "description": "钟面日程、模块独立配置、TOML、模型直选与可干预的兴趣记忆。默认不自动发布。",
+  "description": "让麦麦自主浏览 B 站，理解视频和评论，发表评论与回复，并通过每日复盘积累记忆、调整兴趣。",
   "author": {"name": "ANTINOVIA", "url": "https://github.com/ANTINOVIA"},
   "urls": {"repository": "https://github.com/ANTINOVIA/maibot-bililife", "homepage": "https://github.com/ANTINOVIA/maibot-bililife", "documentation": "https://github.com/ANTINOVIA/maibot-bililife#readme", "issues": "https://github.com/ANTINOVIA/maibot-bililife/issues"},
   "license": "MIT",
