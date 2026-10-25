@@ -37,6 +37,7 @@ const targets = {schedule:'schedule',browse:'browse',comments:'interactions',rep
 let page='overview', section='', number=1, busy=false, zone='Asia/Shanghai', settingsData=null, requestChain=Promise.resolve();
 let pendingJob=null;
 let scheduleDay='';
+let interestPage=1;
 
 function el(tag,text='',cls='') { const n=document.createElement(tag); n.textContent=text; if(cls)n.className=cls; if(tag==='input'||tag==='textarea')n.classList.add('maibot-input'); if(tag==='select')n.classList.add('maibot-select'); return n; }
 function button(text,fn,cls='') { const b=el('button',text,'maibot-button '+cls); if(cls.includes('primary'))b.classList.add('maibot-button-primary'); if(cls.includes('danger'))b.classList.add('maibot-button-danger'); b.type='button'; b.onclick=()=>perform(fn,b); return b; }
@@ -164,12 +165,51 @@ async function interactions(){
 }
 async function memories(){main.append(await moduleForm('memory'));const p=panel('回忆一段经历'),q=input('');q.placeholder='输入内容、视频名或感兴趣的问题';p.append(toolbar(q,button('检索记忆',async()=>{const r=await call('query','memory_search',{query:q.value}),list=el('div');if(!r.items.length)list.append(el('div','没有找到相关经历。','empty'));for(const x of r.items){const row=el('div','','record');row.append(el('p',x.text),link(x.source),button('查看与纠错',()=>showDetail('memories',x.id)));list.append(row);}modal('记忆检索',list);})));main.append(p);await records('memories');}
 async function interests(){
-  main.append(await moduleForm('persona'));const p=panel('我的兴趣','可以直接调整权重、增加主题并冻结某项。人工干预不受自动变化步长限制，保存原因并支持回滚。');p.append(button('新增兴趣',()=>interestEditor(),'primary'));
-  const data=await call('query','snapshot',{section:'interests'});for(const r of data.items){const row=el('div','','record'),h=el('div','','row-head');h.append(el('h3',r.topic),el('span',r.frozen?'已冻结':'允许缓慢变化','pill'));const meter=el('div','','meter'),bar=el('span');bar.style.width=(r.weight*100)+'%';meter.append(bar);row.append(h,el('p',`兴趣权重 ${Math.round(r.weight*100)}%`),meter,toolbar(button('干预与调整',()=>interestEditor(r)),button(r.frozen?'解冻':'冻结',async()=>{await call('action','interest_action',{record_id:r.topic,action:r.frozen?'unfreeze':'freeze'});await refresh();})));p.append(row);}main.append(p,tabs([['changes','兴趣变化'],['persona_history','人格干预历史']],section||'changes'));await records(section==='persona_history'?'persona_history':'changes');
+  main.append(await moduleForm('persona'));
+  const p=panel('我的兴趣','编辑主题名称、权重或冻结状态，也可以删除不想保留的兴趣。修改会同步保存到主题设置，并保留变更记录。');
+  p.append(button('新增兴趣',()=>interestEditor(),'primary'));
+  let data=await call('query','snapshot',{section:'interests',page:interestPage});
+  if(interestPage>data.pages){interestPage=data.pages;data=await call('query','snapshot',{section:'interests',page:interestPage});}
+  if(!data.items.length)p.append(el('div','还没有兴趣，点击“新增兴趣”添加一个主题。','empty'));
+  for(const r of data.items){
+    const row=el('div','','record'),h=el('div','','row-head');
+    h.append(el('h3',r.topic),el('span',r.frozen?'已冻结':'允许缓慢变化','pill'));
+    const meter=el('div','','meter'),bar=el('span');bar.style.width=(r.weight*100)+'%';meter.append(bar);
+    row.append(h,el('p',`兴趣权重 ${Math.round(r.weight*100)}%`),meter,toolbar(
+      button('编辑兴趣',()=>interestEditor(r)),
+      button(r.frozen?'解冻':'冻结',async()=>{await call('action','interest_action',{record_id:r.topic,action:r.frozen?'unfreeze':'freeze'});await refresh();}),
+      button('删除',()=>interestDelete(r),'danger')));
+    p.append(row);
+  }
+  if(data.pages>1){
+    const previous=button('上一页',async()=>{interestPage--;await refresh();});previous.disabled=interestPage<=1;
+    const next=button('下一页',async()=>{interestPage++;await refresh();});next.disabled=interestPage>=data.pages;
+    p.append(toolbar(previous,el('span',`第 ${interestPage} / ${data.pages} 页 · 共 ${data.total} 项`,'hint'),next));
+  }
+  main.append(p,tabs([['changes','兴趣变化'],['persona_history','人格干预历史']],section||'changes'));
+  await records(section==='persona_history'?'persona_history':'changes');
 }
 function interestEditor(existing={}){
-  const topic=input(existing.topic||''),weight=input(existing.weight??.5,'number'),slider=input(existing.weight??.5,'range'),reason=input(''),frozen=toggle('冻结自动变化',!!existing.frozen);weight.min='0';weight.max='1';weight.step='.01';weight.setAttribute('aria-label','兴趣权重数值');slider.min='0';slider.max='1';slider.step='.01';slider.setAttribute('aria-label','兴趣权重滑块');slider.oninput=()=>weight.value=slider.value;weight.oninput=()=>slider.value=weight.value;const value=el('div','','inline-value');value.append(slider,weight);reason.placeholder='例如：这周想多了解这个方向';
-  modal(existing.topic?'调整兴趣':'新增兴趣',field('主题',topic),field('权重 0—1',value),frozen.node,field('干预原因',reason),el('p','新增主题也会加入允许浏览范围；发布仍取决于评论/回复开关、额度和证据检查。','hint'),button('保存干预',async()=>{await call('action','interest_save',{data:JSON.stringify({topic:topic.value,weight:Number(weight.value),frozen:frozen.input.checked,reason:reason.value})});$('#details').close();notify('兴趣已更新并保留变更记录');await refresh();},'primary'));
+  const editing=!!existing.topic;
+  const topic=input(existing.topic||''),weight=input(existing.weight??.5,'number'),slider=input(existing.weight??.5,'range'),reason=input(''),frozen=toggle('冻结自动变化',!!existing.frozen);
+  topic.maxLength=80;weight.min='0';weight.max='1';weight.step='.01';weight.required=true;weight.setAttribute('aria-label','兴趣权重数值');slider.min='0';slider.max='1';slider.step='.01';slider.setAttribute('aria-label','兴趣权重滑块');
+  slider.oninput=()=>weight.value=slider.value;weight.oninput=()=>slider.value=weight.value;
+  const value=el('div','','inline-value');value.append(slider,weight);reason.maxLength=300;reason.placeholder='选填，例如：这周想多了解这个方向';
+  modal(editing?'编辑兴趣':'新增兴趣',field('主题名称',topic),field('权重 0—1',value),frozen.node,field('修改原因（选填）',reason),
+    el('p',editing?'修改名称会替换原主题，不会新增另一项兴趣。':'新增主题也会加入允许浏览范围；发布仍受独立开关、额度和证据检查约束。','hint'),
+    button(editing?'保存修改':'添加兴趣',async()=>{
+      if(!topic.value.trim()||!weight.value.trim()||!weight.checkValidity())throw Error('请填写主题名称和 0—1 之间的权重');
+      await call('action','interest_save',{data:JSON.stringify({topic:topic.value,original_topic:existing.topic,weight:Number(weight.value),frozen:frozen.input.checked,reason:reason.value})});
+      $('#details').close();notify(editing?'兴趣已修改':'兴趣已添加');await refresh();
+    },'primary'));
+}
+function interestDelete(existing){
+  modal('删除兴趣',el('p',`确定删除「${existing.topic}」吗？`),
+    el('p','会同步移出允许主题，保留已有经历、记忆和变更记录。已有日程不会自动取消；没有剩余主题或指定 UP 主时，会关闭评论和回复自动发布。','hint'),
+    button('确认删除',async()=>{
+      const result=await call('action','interest_action',{record_id:existing.topic,action:'delete'});
+      $('#details').close();notify(result.auto_publish_disabled?'兴趣已删除；没有剩余浏览范围，自动发布已关闭':'兴趣已删除');await refresh();
+    },'danger'));
 }
 
 async function providers(){

@@ -285,40 +285,94 @@ class WebUIService:
             return {"ok":True}
         if action == "rollback":
             return await self.engine.evolution.rollback(record_id)
+        if action == "delete":
+            return await self.interest_delete(record_id)
         if action not in ("freeze", "unfreeze"):
             raise ValueError("未知兴趣操作")
-        await self.store.call("execute", "UPDATE interests SET frozen=? WHERE topic=?", (int(action == "freeze"), record_id))
+        changed = await self.store.call("execute", "UPDATE interests SET frozen=? WHERE topic=?", (int(action == "freeze"), record_id))
+        if not changed:
+            raise ValueError("兴趣不存在，请刷新列表")
         await self.store.call("audit", "interest_" + action, {"topic": record_id})
         return {"ok": True}
 
+    def _persist_interest_settings(self, db, config):
+        db.execute("INSERT INTO kv VALUES('settings',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (dump(config.model_dump()),))
+        row = db.execute("SELECT value FROM kv WHERE key='settings_revision'").fetchone()
+        revision = json.loads(row[0]) + 1 if row else 1
+        db.execute("INSERT INTO kv VALUES('settings_revision',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (dump(revision),))
+        write_settings_file(self.engine.data, config)
+        return revision
+
+    async def interest_delete(self, topic):
+        if not isinstance(topic, str) or not 1 <= len(topic.strip()) <= 80:
+            raise ValueError("兴趣主题无效")
+        topic = topic.strip()
+        async with self.settings_lock:
+            config = self.engine.config().model_copy(deep=True)
+            config.allowed_topics = [item for item in config.allowed_topics if item != topic]
+            stopped = not config.allowed_topics and not config.allowed_uploaders
+            if stopped:
+                config.auto_publish_comments = config.auto_publish_replies = False
+            config = Settings.model_validate(config.model_dump())
+            def remove():
+                with self.store.connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    old = db.execute("SELECT * FROM interests WHERE topic=?", (topic,)).fetchone()
+                    if old is None:
+                        raise ValueError("兴趣不存在，请刷新列表")
+                    db.execute("DELETE FROM interests WHERE topic=?", (topic,))
+                    db.execute("INSERT INTO kv VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("interest_retired_before:" + topic, dump(time.time())))
+                    revision = self._persist_interest_settings(db, config)
+                    db.execute("INSERT INTO audit(kind,data,created) VALUES(?,?,?)", ("interest_deleted", dump(redact({"topic": topic, "previous": dict(old), "auto_publish_disabled": stopped})), time.time()))
+                    return revision
+            revision = await asyncio.to_thread(remove)
+            self.engine.settings = config
+        return {"ok": True, "topic": topic, "revision": revision, "auto_publish_disabled": stopped}
+
     async def interest_save(self, data):
         row=json.loads(data)
-        if not isinstance(row,dict) or set(row)-{"topic","weight","frozen","reason"}:
+        if not isinstance(row,dict) or set(row)-{"topic","original_topic","weight","frozen","reason"}:
             raise ValueError("兴趣参数无效")
-        topic,weight,reason=row.get("topic",""),row.get("weight"),row.get("reason","")
+        topic,weight,reason=row.get("topic",""),row.get("weight"),row.get("reason", "")
+        original = row.get("original_topic")
         frozen=row.get("frozen",False)
-        if not isinstance(topic,str) or not 1<=len(topic.strip())<=80 or type(weight) not in (int,float) or not 0<=weight<=1 or type(frozen) is not bool or not isinstance(reason,str) or not 1<=len(reason.strip())<=300:
-            raise ValueError("需要主题、0..1权重、冻结开关和干预原因")
-        topic,reason=topic.strip(),reason.strip()
+        if not isinstance(topic,str) or not 1<=len(topic.strip())<=80 or type(weight) not in (int,float) or not 0<=weight<=1 or type(frozen) is not bool or not isinstance(reason,str) or len(reason.strip())>300:
+            raise ValueError("需要主题、0..1权重和冻结开关；原因最多300字")
+        if original is not None and (not isinstance(original, str) or not 1 <= len(original.strip()) <= 80):
+            raise ValueError("原兴趣主题无效")
+        original = original.strip() if original is not None else None
+        topic,reason=topic.strip(),reason.strip() or "管理员调整兴趣"
         async with self.settings_lock:
             config=self.engine.config().model_copy(deep=True)
+            if original and original != topic:
+                config.allowed_topics = list(dict.fromkeys(topic if item == original else item for item in config.allowed_topics))
             if topic not in config.allowed_topics:
                 config.allowed_topics.append(topic)
             config=Settings.model_validate(config.model_dump())
             def save():
                 with self.store.connect() as db:
                     db.execute("BEGIN IMMEDIATE")
-                    old=db.execute("SELECT weight FROM interests WHERE topic=?",(topic,)).fetchone()
+                    old=db.execute("SELECT * FROM interests WHERE topic=?",(original or topic,)).fetchone()
+                    if original is not None and old is None:
+                        raise ValueError("原兴趣已不存在，请刷新列表后重试")
+                    renamed = original is not None and original != topic
+                    if renamed:
+                        if db.execute("SELECT 1 FROM interests WHERE topic=?", (topic,)).fetchone():
+                            raise ValueError("已存在同名兴趣，请直接编辑该项")
+                        db.execute("DELETE FROM interests WHERE topic=?", (original,))
+                        db.execute("INSERT INTO kv VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("interest_retired_before:" + original, dump(time.time())))
                     db.execute("INSERT INTO interests VALUES(?,?,?) ON CONFLICT(topic) DO UPDATE SET weight=excluded.weight,frozen=excluded.frozen",(topic,weight,int(frozen)))
+                    retired = db.execute("SELECT value FROM kv WHERE key=?", ("interest_retired_before:" + topic,)).fetchone()
+                    created = max(time.time(), json.loads(retired[0]) + 0.000001 if retired else 0)
                     change=uid()
-                    db.execute("INSERT INTO persona_changes VALUES(?,?,?,?,?,?,?,?,?)",(change,self.engine.day(),topic,old[0] if old else .5,weight,"人工干预："+reason,dump(["administrator"]),0,time.time()))
-                    db.execute("INSERT INTO kv VALUES('settings',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(dump(config.model_dump()),))
-                    write_settings_file(self.engine.data,config)
-                    return change
-            change=await asyncio.to_thread(save)
+                    note = reason + (f"（由「{original}」更名）" if renamed else "")
+                    db.execute("INSERT INTO persona_changes VALUES(?,?,?,?,?,?,?,?,?)",(change,self.engine.day(),topic,old["weight"] if old else .5,weight,"人工干预："+note,dump(["administrator"]),0,created))
+                    revision = self._persist_interest_settings(db, config)
+                    db.execute("INSERT INTO audit(kind,data,created) VALUES(?,?,?)", ("interest_intervention", dump(redact({"id":change,"topic":topic,"original_topic":original,"weight":weight,"frozen":frozen,"reason":reason})), time.time()))
+                    return change, revision
+            change,revision=await asyncio.to_thread(save)
             self.engine.settings=config
-        await self.store.call("audit","interest_intervention",{"id":change,"topic":topic,"reason":reason})
-        return {"ok":True,"change_id":change}
+        return {"ok":True,"change_id":change,"topic":topic,"original_topic":original,"renamed":original is not None and original != topic,"revision":revision}
 
     async def schedule_change(self, action, data):
         args=json.loads(data)

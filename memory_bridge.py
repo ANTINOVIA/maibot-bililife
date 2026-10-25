@@ -113,6 +113,11 @@ class PersonaEvolution:
             def change():
                 with self.store.connect() as db:
                     db.execute("BEGIN IMMEDIATE")
+                    # 模型请求期间可能发生删除/更名，以持久化设置阻止旧结果重建兴趣。
+                    saved = db.execute("SELECT value FROM kv WHERE key='settings'").fetchone()
+                    allowed = json.loads(saved[0])["allowed_topics"] if saved else self.config().allowed_topics
+                    if item.topic not in allowed:
+                        return None
                     db.execute("INSERT OR IGNORE INTO interests VALUES(?,?,0)", (item.topic, 0.5))
                     old = db.execute("SELECT * FROM interests WHERE topic=?", (item.topic,)).fetchone()
                     if old["frozen"]:
@@ -120,7 +125,9 @@ class PersonaEvolution:
                     new = round(max(0, min(1, old["weight"] + item.delta)), 4)
                     change_id = uid()
                     db.execute("UPDATE interests SET weight=? WHERE topic=?", (new, item.topic))
-                    db.execute("INSERT INTO persona_changes VALUES(?,?,?,?,?,?,?,?,?)", (change_id, day, item.topic, old["weight"], new, item.reason, dump(sources), 0, now))
+                    retired = db.execute("SELECT value FROM kv WHERE key=?", ("interest_retired_before:" + item.topic,)).fetchone()
+                    created = max(now, json.loads(retired[0]) + 0.000001 if retired else 0)
+                    db.execute("INSERT INTO persona_changes VALUES(?,?,?,?,?,?,?,?,?)", (change_id, day, item.topic, old["weight"], new, item.reason, dump(sources), 0, created))
                     return {"id": change_id, "topic": item.topic, "old": old["weight"], "new": new}
             result = await __import__("asyncio").to_thread(change)
             if result:
@@ -134,6 +141,9 @@ class PersonaEvolution:
                 row = db.execute("SELECT * FROM persona_changes WHERE id=?", (change_id,)).fetchone()
                 if not row or row["rolled_back"]:
                     raise ValueError("变更不存在或已回滚")
+                retired = db.execute("SELECT value FROM kv WHERE key=?", ("interest_retired_before:" + row["topic"],)).fetchone()
+                if (retired and row["created"] <= json.loads(retired[0])) or not db.execute("SELECT 1 FROM interests WHERE topic=?", (row["topic"],)).fetchone():
+                    raise ValueError("该兴趣已删除或更名，历史版本不可回滚；请编辑当前兴趣")
                 later = db.execute("SELECT id FROM persona_changes WHERE topic=? AND created>? AND rolled_back=0", (row["topic"], row["created"])).fetchone()
                 if later:
                     raise ValueError("请先回滚该维度更新的版本")

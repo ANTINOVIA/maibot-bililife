@@ -48,7 +48,7 @@ flowchart LR
 | 浏览与理解 | 自主搜索、UP 主内容、视频经历、只读评论经历、证据与覆盖范围 |
 | 评论与回复 | 草稿编辑、独立自动发布开关、发布核对与相关线程 |
 | 经历记忆 | 检索、纠错、遗忘、来源与宿主上下文状态 |
-| 兴趣与人格 | 权重干预、冻结、变更依据与回滚 |
+| 兴趣与人格 | 新增、编辑、重命名和删除兴趣，权重调整、冻结及变更记录 |
 | 模型 | 直选 MaiBot 模型、独立提供商、协议配置、连接检查延迟及错误码 |
 | 设置总览 | 跳转各模块、TOML、独立 B 站扫码 |
 | 运行记录 | 脱敏审计、模型调用、资源设置与数据库备份 |
@@ -169,6 +169,8 @@ flowchart LR
 | `recall_chars` | int | `2400` | 200～6000 字符 | 一次检索的文本与来源预算；正文会截断，来源长度参与预算扣减，返回元数据与注入包装不属于这个正文预算。 |
 
 ### `[persona]` · 兴趣与人格干预
+
+在“兴趣与人格”的列表中，点击“编辑兴趣”可修改主题名称、权重和冻结状态，修改原因选填。更名会替换原主题并同步允许主题，不会留下重复项。点击“删除”并确认后，会从兴趣和允许主题中移除该项，重启后不会因旧配置重新出现；已有经历、记忆及变更记录保留，已安排的日程不会自动取消。删除不会自动加入排除主题。若没有剩余允许主题或指定 UP 主，评论和回复的自动发布开关会关闭；新增主题不会自动重新开启它们。列表支持分页。
 
 | 配置项 | 类型 | 默认值 | 允许值 | 含义与取值影响 |
 | --- | --- | --- | --- | --- |
@@ -745,28 +747,32 @@ await maibot.query("memory_search", {query: "科学实验"});
 await maibot.action("memory_edit", {memory_id: "MEMORY_ID", action: "correct", text: "按来源纠正后的经历内容。"});
 ```
 
-### `interest_save` · 人工兴趣干预
+### `interest_save` · 新增、编辑与重命名兴趣
 
-- **用途：**新增/调整兴趣，记录旧值、新值和原因；必要时将主题加入 allowed_topics。
-- **参数：**data：必填 JSON 对象文本，≤2000；仅 topic、weight、frozen、reason。topic：必填 str，去空白后 1～80；weight：必填数字 0～1；frozen：bool，默认 false；reason：必填 str，去空白后 1～300。增加主题仍受 allowed_topics 的总数限制。
-- **返回：**`{ok:true,change_id}`；人工权重不受自动变化步长限制。
+- **用途：**新增或编辑主题、权重及冻结状态，记录变更并同步 `allowed_topics` 和持久化 TOML。人工权重不受自动变化步长限制。
+- **参数：**data：必填 JSON 对象文本，≤2000；仅 topic、original_topic、weight、frozen、reason。topic：必填 str，去空白后 1～80；weight：必填数字 0～1；frozen：bool，默认 false；reason：选填 str，去空白后最多 300 字，省略或空白时为“管理员调整兴趣”。original_topic：选填 str，去空白后 1～80；重命名时填写原主题，原项不存在或目标兴趣已存在时拒绝保存。不传 original_topic 时，按 topic 新增或更新，兼容原调用。增加主题仍受 allowed_topics 的总数限制。
+- **返回：**`{ok:true,change_id,topic,original_topic,renamed,revision}`；original_topic 未传时为 null，renamed 表示是否更名，revision 为持久化设置版本。
 - **示例：**
 
 ```javascript
 await maibot.action("interest_save", {data: JSON.stringify({
   topic: "科学", weight: 0.7, frozen: false, reason: "近期希望多了解实验方法"
 })});
+await maibot.action("interest_save", {data: JSON.stringify({
+  original_topic: "科学", topic: "科学实验", weight: 0.8, frozen: true
+})});
 ```
 
-### `interest_action` · 冻结与版本回滚
+### `interest_action` · 删除、冻结与版本回滚
 
-- **用途：**冻结兴趣维度，或撤销兴趣/人格补充的版本变更。
-- **参数：**record_id：必填 str，≤200；action：必填 str，≤30。freeze/unfreeze 时 record_id 是主题名称；rollback 时是 persona_changes 的变更 ID；rollback_guidance 时是 persona_interventions 的干预 ID。
-- **返回：**freeze/unfreeze/rollback_guidance 返回 `{ok:true}`；rollback 返回 `{rolled_back:true}`。有更新且未回滚的相关版本时，要求先回滚新版本。兴趣回滚恢复权重，不移除已经加入的允许主题，也不自动撤销冻结状态。
+- **用途：**删除、冻结或解冻兴趣，或撤销兴趣/人格补充的版本变更。
+- **参数：**record_id：必填 str，≤200；action：必填 str，≤30，可取 delete / freeze / unfreeze / rollback / rollback_guidance。delete/freeze/unfreeze 时 record_id 是主题名称（删除时去空白后 1～80 字）；rollback 时是 persona_changes 的变更 ID；rollback_guidance 时是 persona_interventions 的干预 ID。对不存在的兴趣执行删除、冻结或解冻会报错。
+- **返回：**delete 返回 `{ok:true,topic,revision,auto_publish_disabled}`：同步删除兴趣与允许主题，保留经历、记忆和历史；没有剩余主题或 UP 主范围时，auto_publish_disabled 为 true，自动评论与自动回复均关闭。freeze/unfreeze/rollback_guidance 返回 `{ok:true}`；rollback 返回 `{rolled_back:true}`。有更新且未回滚的相关版本时，要求先回滚新版本；已删除或更名的原主题历史不可再回滚，即使后来重新添加同名主题。兴趣回滚仅恢复权重，不撤销更名、允许主题或冻结状态。
 - **示例：**
 
 ```javascript
 await maibot.action("interest_action", {record_id: "科学", action: "freeze"});
+await maibot.action("interest_action", {record_id: "科学实验", action: "delete"});
 await maibot.action("interest_action", {record_id: "CHANGE_ID", action: "rollback"});
 ```
 
