@@ -5,7 +5,7 @@
 
 根据 MaiBot 的人格、兴趣和近期经历安排 B 站生活：自主发现内容，理解视频或只阅读评论，决定是否互动，保存带来源的经历，并在后续对话中检索使用。通过 MaiBot 自带 WebUI 管理，无需独立前端或数据库服务。
 
-插件 ID：**`antinova.maibot-bililife`**。已有安装需要按 [ID 迁移说明](docs/ID_MIGRATION.md) 移动原配置、账号和数据，避免作为第二份插件运行。
+插件 ID：**`antinova.maibot-bililife`**。
 
 本文对应当前 **0.2.6 发布源码与安装包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
 
@@ -838,7 +838,7 @@ console.log(report.audit);
 | 互动记录 | draft 的 quote/reason/root/parent/target_uid/event_id；operations 的账号、业务日期、正文、rpid、state 与 error |
 | 复盘 payload | version、degraded、validation_error、review（结构化复盘）、records（真实执行资料）；计划未执行项不写成经历 |
 
-### 目录、备份与恢复
+### 目录与数据存储
 
 ```text
 bililife/                         # 插件源码与 WebUI
@@ -871,9 +871,9 @@ data_dir/
 
 评论与回复发布存在一项私有依赖：`vendor/client.py` 的 `publish()` 使用 `bilibili-api-python==17.4.2` 的 `Api._prepare_request()` 准备签名请求，再由插件发送单次 POST，以避免通用请求包装器自动重试写请求。该方法不属于稳定公共 API，上游改变签名或返回结构可能导致发布失败；不要单独升级平台库。升级前的复核要求见 [私有接口依赖说明](docs/COMPATIBILITY.md#评论发布的私有接口依赖)。
 
-升级、卸载、凭据保护及手动恢复步骤见 [运维文档](docs/OPERATIONS.md)。源码回滚应保留当前数据库和发布状态；若旧数据库会丢弃或回退已有发布操作，不应恢复。回滚到旧媒体协议版本前，应暂停并恢复兼容路由；不以回滚为理由重新发送未知评论。
+安装、配置、更新、凭据保护和卸载步骤见 [运维文档](docs/OPERATIONS.md)。
 
-仓库和安装包不提供读取宿主 WebUI 管理凭据的部署、恢复或 ID 迁移脚本。安装与启停通过宿主插件管理界面完成；`scripts/` 仅保留构建、打包和只读预检工具。
+安装与启停通过宿主插件管理界面完成；`scripts/` 提供构建、打包和只读预检工具。
 
 ## 许可证
 

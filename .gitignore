@@ -20,7 +20,3 @@ credential*.json
 *.log
 *.sqlite3-wal
 *.sqlite3-shm
-/scripts/deploy_server.py
-/scripts/restore_server.py
-/scripts/migrate_plugin_id.py
-/scripts/restore_settings.py
