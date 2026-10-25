@@ -5,7 +5,7 @@
 
 根据 MaiBot 的人格、兴趣和近期经历安排 B 站生活：自主发现内容，理解视频或只阅读评论，决定是否互动，保存带来源的经历，并在后续对话中检索使用。通过 MaiBot 自带 WebUI 管理，无需独立前端或数据库服务。
 
-插件 ID：**`ANTINOVA.maibot-bililife`**。已有安装需要按 [ID 迁移说明](docs/ID_MIGRATION.md) 移动原配置、账号和数据，避免作为第二份插件运行。
+插件 ID：**`antinova.maibot-bililife`**。已有安装需要按 [ID 迁移说明](docs/ID_MIGRATION.md) 移动原配置、账号和数据，避免作为第二份插件运行。
 
 本文对应当前 **0.2.6 发布源码与安装包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
 
@@ -55,7 +55,7 @@ flowchart LR
 
 清单声明的宿主兼容范围为 **MaiBot 1.3.14–1.3.99**，SDK 仍限定为 **maibot-plugin-sdk 2.16.0**；插件类型为 `integration`（外部平台集成）。实际验证环境为 **MaiBot 1.3.14 / SDK 2.16.0 / Dashboard 1.9.8 / Python 3.12**，范围内其他宿主补丁版本尚未逐一验证。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
 
-1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `ANTINOVA.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
+1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `antinova.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
 2. 打开 BiliLife **设置总览**生成二维码，使用 B 站客户端完成独立扫码。
 3. 在**模型**选择文本模型及需要的媒体模型；在**浏览与理解**选择理解方式、兴趣主题与每日额度。
 4. 在**每日安排**生成计划或等待自动生成。日程可包含只读评论，不要求预先指定视频。
@@ -340,7 +340,7 @@ api_key = "替换为你的APIKey"
 
 ## 公共接口调用约定
 
-插件标识为 `ANTINOVA.maibot-bililife`，下述 25 个 API 注册版本均为 `"1"`。WebUI 使用宿主自定义页面 v2 桥接，所有九个页面声明同一组接口。以下 JavaScript 示例在宿主注入了 `maibot` 的插件页面上下文中执行，不是可直接运行的普通独立网页。
+插件标识为 `antinova.maibot-bililife`，下述 25 个 API 注册版本均为 `"1"`。WebUI 使用宿主自定义页面 v2 桥接，所有九个页面声明同一组接口。以下 JavaScript 示例在宿主注入了 `maibot` 的插件页面上下文中执行，不是可直接运行的普通独立网页。
 
 ```javascript
 // 查询：返回插件结果；桥接传输失败会抛出异常。
@@ -358,8 +358,8 @@ if (saved?.ok === false) throw new Error(saved.error);
 宿主还提供经过认证的 HTTP 桥接。在已配置的 MaiBot 地址下，POST：
 
 ```text
-/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/queries/{查询名}
-/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/actions/{操作名}
+/api/webui/plugins/runtime/webui/antinova.maibot-bililife/overview/queries/{查询名}
+/api/webui/plugins/runtime/webui/antinova.maibot-bililife/overview/actions/{操作名}
 ```
 
 请求体为 `{"args":{...参数...}}`。成功桥接的 HTTP 响应通常为 `{"success":true,"result":<插件返回值>}`；插件业务校验仍可能在 result 内返回 `{"ok":false,"error":"脱敏错误说明"}`，不能只检查 HTTP 200 或宿主 success。桥接鉴权与传输错误由宿主处理，不承诺统一为上述业务结构。
@@ -368,7 +368,7 @@ if (saved?.ok === false) throw new Error(saved.error);
 # maibot.cookies 是你在受保护位置准备的有效宿主会话 Cookie 文件。
 # MAIBOT_URL 替换为实际宿主地址，不在 URL 中附带 Token。
 curl --request POST \
-  "$MAIBOT_URL/api/webui/plugins/runtime/webui/ANTINOVA.maibot-bililife/overview/queries/snapshot" \
+  "$MAIBOT_URL/api/webui/plugins/runtime/webui/antinova.maibot-bililife/overview/queries/snapshot" \
   --cookie maibot.cookies --header 'Content-Type: application/json' \
   --data '{"args":{"section":"overview","page":1}}'
 ```

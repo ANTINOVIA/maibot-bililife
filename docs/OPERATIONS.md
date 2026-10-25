@@ -1,12 +1,12 @@
 # 安装、部署与回滚
 
-以下路径来自已验证部署环境。部署到其他服务器前，先从实际配置确认地址、SSH 用户、
+以下路径基于已核实的宿主布局，并按当前小写插件 ID 列出；历史 ID 安装须先迁移目录。部署到其他服务器前，先从实际配置确认地址、SSH 用户、
 端口和安装位置，不要猜测账户。私钥仅由 SSH 客户端使用，不得复制进插件或安装包。
 
 宿主 `/opt/maibot` 使用 Python 3.12.15、uv 管理环境，由 `maibot.service` 启动。
-插件安装路径 `/opt/maibot/plugins/ANTINOVA_maibot-bililife`。
-持久化路径 `/opt/maibot/data/plugins/ANTINOVA.maibot-bililife`。
-临时媒体目录由 `ctx.paths.runtime_dir` 注入，默认 `/opt/maibot/temp/plugins/ANTINOVA.maibot-bililife`。
+插件安装路径 `/opt/maibot/plugins/antinova_maibot-bililife`。
+持久化路径 `/opt/maibot/data/plugins/antinova.maibot-bililife`。
+临时媒体目录由 `ctx.paths.runtime_dir` 注入，默认 `/opt/maibot/temp/plugins/antinova.maibot-bililife`。
 没有新建公网服务；页面通过宿主 WebUI v2 桥接调用后端。
 
 ## 运维方式
@@ -30,7 +30,7 @@ FFmpeg 是可选系统依赖；本服务器已从 Debian 仓库安装，不依�
 ## 本次访问方式
 
 服务器 WebUI 只监听本机 8001。当前工作机 SSH 隧道入口：
-`http://127.0.0.1:18001/extensions/ANTINOVA.maibot-bililife/overview`。
+`http://127.0.0.1:18001/extensions/antinova.maibot-bililife/overview`。
 用现有 MaiBot WebUI 登录方式进入，B 站登录在插件设置页单独扫码。
 不要把 WebUI Token 放进 URL 或文档。
 
