@@ -1,5 +1,4 @@
 from datetime import timedelta
-from pathlib import Path
 from types import SimpleNamespace
 import asyncio
 import json
@@ -157,20 +156,6 @@ async def test_disabling_browsing_cancels_running_job_before_next_external_actio
     assert not calls
     assert engine.store.rows('SELECT state FROM tasks WHERE id=?',(task_id,))[0]['state']=='paused'
     await engine.platform.close()
-
-
-def test_old_source_rollback_does_not_enable_both_publishers_from_one():
-    import importlib.util
-    file=Path(__file__).resolve().parents[1]/'scripts/restore_settings.py'
-    spec=importlib.util.spec_from_file_location('bililife_restore_settings',file)
-    module=importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    source='class Settings:\n    mode: str\n    autonomous_limits_confirmed: bool\n    max_videos: int\n'
-    current=Settings(auto_publish_replies=True).model_dump()
-    result=module.adapt_settings(current,source)
-    assert result['mode']=='draft_only' and result['autonomous_limits_confirmed'] is False
-    current['auto_publish_comments']=True
-    assert module.adapt_settings(current,source)['mode']=='autonomous'
 
 
 async def test_schedule_window_and_payload_invalid_do_not_insert(engine):

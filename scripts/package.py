@@ -12,8 +12,10 @@ excluded={'.git','.venv','.venv312','__pycache__','.pytest_cache','dist','data'}
 files=[]
 # 只遍历交付目录，避免把测试临时目录、虚拟环境或将来的私有文件递归打包。
 candidates=[p for p in root.iterdir() if p.is_file() and (p.suffix in ('.py','.md','.json','.toml','.txt','.lock') or p.name in ('LICENSE','.gitignore'))]
-for name in ('docs','migrations','prompts','scripts','tests','vendor','webui'):
+for name in ('docs','migrations','prompts','tests','vendor','webui'):
     candidates.extend((root/name).rglob('*'))
+# 运维工具即使仅在本地重新创建，也不能随安装包分发。
+candidates.extend(root/'scripts'/name for name in ('build_webui.py','package.py','server_preflight.py'))
 for path in sorted(candidates):
     relative=path.relative_to(root)
     if set(relative.parts)&excluded or not path.is_file():
