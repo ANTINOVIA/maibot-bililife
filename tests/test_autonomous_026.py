@@ -42,12 +42,13 @@ async def test_autonomous_discovery_needs_no_video_or_query_and_children_have_ti
         return [{'bvid':'BV1xx411c7mD','title':'宇宙','description':'','up_uid':'1'}]
     engine.host.generate=generate
     engine.platform.discover=discover
-    task=engine.store.add_task('discover',{},engine.day(),time.time()-1,time.time()+10)
+    task=engine.store.add_task('discover',{},engine.day(),time.time()-1,time.time()+600)
     engine.current=engine.store.claim(engine.owner)
     result=await engine.discover({})
     assert seen==['科学 宇宙'] and result['chosen']
     row=engine.store.rows("SELECT * FROM tasks WHERE type='watch'")[0]
-    assert row['deadline']>engine.current['deadline'] and json.loads(row['dependencies'])==[task]
+    assert row['deadline']<=engine.current['deadline'] and json.loads(row['dependencies'])==[task]
+    assert json.loads(row['payload'])['_slot_owner']==task
     await engine.platform.close()
 
 
@@ -78,8 +79,9 @@ async def test_agent_insertion_respects_existing_reserved_video_budget(engine):
         now=engine.now()
         return ScheduleAdjustment(reason='想了解相关知识',tasks=[{'type':'explore','query':'科学 演示','earliest_start':(now+timedelta(seconds=2)).isoformat(),'deadline':(now+timedelta(seconds=40)).isoformat(),'goal':'探索','reason':'后续问题'}])
     engine.host.generate=generate
-    with pytest.raises(ValueError,match='额度'):
-        await engine.planner.adapt('v1')
+    result = await engine.planner.adapt('v1')
+    assert not result['inserted']
+    assert result['omitted'][0]['reason'] == '剩余预算不足'
     assert len(engine.store.rows('SELECT * FROM tasks'))==1
     await engine.platform.close()
 

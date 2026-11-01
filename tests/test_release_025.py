@@ -177,8 +177,9 @@ async def test_unknown_publication_cannot_be_deleted(engine):
 
 
 async def test_schedule_day_query_has_all_tasks_not_first_page(engine):
+    start = time.time()
     for i in range(30):
-        engine.store.add_task('rest',{'reason':str(i)},engine.day(),time.time()+i,time.time()+500)
+        engine.store.add_task('rest',{'reason':str(i)},engine.day(),start+i*500,start+(i+1)*500)
     result=await WebUIService(engine).snapshot('schedule_board')
     assert len(result['items'])==30
     assert result['timezone']=='Asia/Shanghai'

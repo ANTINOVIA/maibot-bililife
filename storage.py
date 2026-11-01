@@ -164,29 +164,75 @@ class Storage:
                        (day, reservation_key, dump({key: value[0] for key, value in resources.items()}), time.time()))
         return True
 
+    @staticmethod
+    def slot_conflicts(db, day, earliest, deadline, exclude_plan=None, owner=None):
+        rows = db.execute("""SELECT t.id,t.plan_id,t.state,t.payload FROM tasks t
+            LEFT JOIN task_tombstones d ON d.task_id=t.id LEFT JOIN plans p ON p.id=t.plan_id
+            WHERE t.day=? AND t.earliest<? AND t.deadline>? AND d.task_id IS NULL
+              AND t.type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies','publish')
+              AND t.state IN ('queued','retry','paused','running','succeeded')
+              AND NOT (COALESCE(json_extract(p.payload,'$.degraded'),0)=1 AND COALESCE(json_extract(p.payload,'$.theme'),'') LIKE '保守休息：待模型/计划恢复%')""", (day, deadline, earliest)).fetchall()
+        for row in rows:
+            slot_owner = json.loads(row['payload']).get('_slot_owner', row['id'])
+            if owner and slot_owner == owner:
+                continue
+            if exclude_plan and row['plan_id'] == exclude_plan and row['state'] in ('queued','retry','paused'):
+                # Keep children of an already running workflow reserved.
+                if slot_owner == row['id'] and not db.execute("SELECT 1 FROM tasks WHERE json_extract(payload,'$._slot_owner')=? AND state IN ('queued','retry','paused','running') LIMIT 1", (row['id'],)).fetchone():
+                    continue
+            return True
+        return False
+
     def add_task(self, kind, payload, day, earliest, deadline, duration=300, plan_id=None, dependencies=None, task_id=None):
         task_id, now = task_id or uid(), time.time()
-        self.execute("INSERT INTO tasks(id,plan_id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                     (task_id, plan_id, day, kind, "queued", dump(payload), earliest, deadline, earliest, duration, dump(dependencies or []), now, now))
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if payload.get('_slot_owner'):
+                root = db.execute('SELECT earliest,deadline,day FROM tasks WHERE id=?', (payload['_slot_owner'],)).fetchone()
+                if not root or root['day'] != day or earliest < root['earliest'] or deadline > root['deadline']:
+                    raise ValueError('内部活动必须在所属活动时段内')
+            if kind in ('watch','discover','explore','read_comments','rest','memory','review','draft','replies','publish') and self.slot_conflicts(db, day, earliest, deadline, owner=payload.get('_slot_owner')):
+                raise ValueError('日程时段与已有活动冲突')
+            db.execute("INSERT INTO tasks(id,plan_id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (task_id, plan_id, day, kind, 'queued', dump(payload), earliest, deadline, earliest, duration, dump(dependencies or []), now, now))
         return task_id
+
+    def cleanup_legacy_plans(self):
+        now = time.time()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            rows = db.execute("SELECT id,payload FROM plans WHERE active=1").fetchall()
+            for row in rows:
+                payload = json.loads(row['payload'])
+                if payload.get('degraded') is not True or not str(payload.get('theme','')).startswith('保守休息：待模型/计划恢复'):
+                    continue
+                db.execute('UPDATE plans SET active=0 WHERE id=?', (row['id'],))
+                db.execute("UPDATE tasks SET cancel_requested=1,state=CASE WHEN state='running' THEN state ELSE 'cancelled' END,updated=? WHERE plan_id=? AND type='rest' AND state IN ('queued','retry','paused','running')", (now, row['id']))
 
     def save_plan(self, day, proposal, tasks, reason, revise=False):
         now, plan_id = time.time(), uid()
         with self.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            old = db.execute("SELECT id,version FROM plans WHERE day=? AND active=1", (day,)).fetchone()
+            db.execute('BEGIN IMMEDIATE')
+            old = db.execute('SELECT id,version FROM plans WHERE day=? AND active=1', (day,)).fetchone()
             if old and not revise:
-                return old["id"]
-            version = 1
+                return old['id']
+            for index, task in enumerate(tasks):
+                if any(task['earliest'] < other['deadline'] and task['deadline'] > other['earliest'] for other in tasks[:index]):
+                    raise ValueError('计划活动时段互相冲突')
+                if self.slot_conflicts(db, day, task['earliest'], task['deadline'], old['id'] if old else None):
+                    raise ValueError('日程已变化，活动时段发生冲突，请重试')
+            version = db.execute('SELECT COALESCE(MAX(version),0)+1 FROM plans WHERE day=?', (day,)).fetchone()[0]
             if old:
-                version = old["version"] + 1
-                db.execute("UPDATE plans SET active=0 WHERE id=?", (old["id"],))
-                db.execute("UPDATE tasks SET cancel_requested=1,state=CASE WHEN state='running' THEN state ELSE 'cancelled' END,updated=? WHERE plan_id=? AND state NOT IN ('succeeded','failed','cancelled','skipped','expired')", (now, old["id"]))
+                db.execute('UPDATE plans SET active=0 WHERE id=?', (old['id'],))
+                db.execute("""UPDATE tasks SET cancel_requested=1,state='cancelled',updated=?
+                    WHERE plan_id=? AND state IN ('queued','retry','paused')
+                    AND json_extract(payload,'$._slot_owner') IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM tasks c WHERE json_extract(c.payload,'$._slot_owner')=tasks.id AND c.state IN ('queued','retry','paused','running'))""", (now, old['id']))
             proposal.update(plan_id=plan_id, date=day, version=version)
-            db.execute("INSERT INTO plans VALUES(?,?,?,?,?,?,?)", (plan_id, day, version, 1, reason, dump(proposal), now))
+            db.execute('INSERT INTO plans VALUES(?,?,?,?,?,?,?)', (plan_id, day, version, 1, reason, dump(proposal), now))
             for task in tasks:
                 db.execute("INSERT INTO tasks(id,plan_id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (task["id"], plan_id, day, task["type"], "queued", dump(task["payload"]), task["earliest"], task["deadline"], task["earliest"], task["duration"], dump(task["dependencies"]), now, now))
+                           (task['id'], plan_id, day, task['type'], 'queued', dump(task['payload']), task['earliest'], task['deadline'], task['earliest'], task['duration'], dump(task['dependencies']), now, now))
         return plan_id
 
     def recover(self):
@@ -227,8 +273,23 @@ class Storage:
             db.execute("UPDATE tasks SET state=?,result=?,error=?,next_run=COALESCE(?,next_run),owner=NULL,lease_until=NULL,updated=? WHERE id=? AND owner=? AND state='running'", (state, dump(redact(result)), error, next_run, now, task["id"], task["owner"]))
             db.execute("UPDATE attempts SET finished=?,outcome=?,error=? WHERE task_id=? AND number=?", (now, state, error, task["id"], task["attempts"]))
 
+    @staticmethod
+    def _guard_group_publish(db, task_id):
+        if db.execute("""SELECT 1 FROM tasks WHERE (id=? OR json_extract(payload,'$._slot_owner')=?)
+                          AND type='publish' AND state IN ('running','unknown') LIMIT 1""", (task_id, task_id)).fetchone():
+            raise ValueError('已发送或结果未知的操作必须继续核对，不能取消或删除')
+
     def cancel(self, task_id, skipped=False):
-        return self.execute("UPDATE tasks SET cancel_requested=1,state=CASE WHEN state='running' THEN state ELSE ? END,updated=? WHERE id=? AND state NOT IN ('succeeded','failed','cancelled','skipped','expired','unknown')", ("skipped" if skipped else "cancelled", time.time(), task_id))
+        now = time.time()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._guard_group_publish(db, task_id)
+            result = db.execute("""UPDATE tasks SET cancel_requested=1,
+                state=CASE WHEN state='running' THEN state ELSE ? END,updated=?
+                WHERE (id=? OR json_extract(payload,'$._slot_owner')=?)
+                AND state NOT IN ('succeeded','failed','cancelled','skipped','expired','unknown')""",
+                ('skipped' if skipped else 'cancelled', now, task_id, task_id))
+            return result.rowcount
 
     def delete_task(self, task_id, reason):
         now=time.time()
@@ -237,9 +298,11 @@ class Storage:
             row=db.execute("SELECT * FROM tasks WHERE id=?",(task_id,)).fetchone()
             if row is None:
                 raise ValueError("日程不存在")
-            if row["type"]=="publish" and row["state"] in ("running","unknown"):
-                raise ValueError("已发送或结果未知的操作必须继续核对，不能删除")
-            db.execute("UPDATE tasks SET cancel_requested=1,state=CASE WHEN state='running' THEN state WHEN state IN ('queued','retry','paused','blocked_model','blocked_policy','blocked_login','budget_exhausted','timeout') THEN 'cancelled' ELSE state END,updated=? WHERE id=?",(now,task_id))
+            self._guard_group_publish(db, task_id)
+            db.execute("""UPDATE tasks SET cancel_requested=1,state=CASE WHEN state='running' THEN state
+                WHEN state IN ('queued','retry','paused','blocked_model','blocked_policy','blocked_login','budget_exhausted','timeout')
+                THEN 'cancelled' ELSE state END,updated=?
+                WHERE id=? OR json_extract(payload,'$._slot_owner')=?""",(now,task_id,task_id))
             db.execute("INSERT OR REPLACE INTO task_tombstones VALUES(?,?,?)",(task_id,reason,now))
             db.execute("INSERT INTO schedule_edits VALUES(?,?,?,?,?,?,?)",(uid(),row["day"],"delete",task_id,dump(dict(row)),reason,now))
         return dict(row)

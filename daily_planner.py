@@ -5,10 +5,18 @@ import json
 import asyncio
 import time
 
+import aiohttp
+import httpx
+
 from .maibot_adapter import ModelUnavailable
 from .schemas import PlanProposal, ScheduleAdjustment
-from .storage import dump, uid
+from .storage import BudgetExceeded, dump, uid
+from .security import redact
 from .bilibili_adapter import parse_video
+
+
+class PlanValidationError(ValueError):
+    """A schema-valid proposal violates a repairable plan rule."""
 
 
 class DailyPlanner:
@@ -31,40 +39,45 @@ class DailyPlanner:
         pending = await self.store.call("rows", "SELECT type,state,payload,error FROM tasks WHERE day<? AND state NOT IN ('succeeded','cancelled','skipped') ORDER BY created DESC LIMIT 8", (day,))
         interactions = await self.store.call("rows", "SELECT kind,state,video_id,text FROM operations ORDER BY created DESC LIMIT 8")
         budget = await self.store.call("rows", "SELECT * FROM budget WHERE day=?", (day,))
-        manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies') ORDER BY earliest LIMIT 10",(day,))
+        manual=await self.store.call("rows","SELECT type,earliest,deadline,payload FROM tasks WHERE day=? AND plan_id IS NULL AND state IN ('queued','retry','paused') AND type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies','publish') ORDER BY earliest LIMIT 10",(day,))
         external = {"date": day, "now": now.isoformat(), "timezone": cfg.timezone,
                     "current_rest_until": self.engine.rest_until(),
-                    "settings": cfg.model_dump(exclude={"prompt_overrides","owner_uid"}), "interests": interests,
+                    "settings": cfg.model_dump(include={'allowed_topics','excluded_topics','allowed_uploaders','browsing_enabled',
+                        'comments_enabled','replies_enabled','memory_enabled','review_enabled','max_videos',
+                        'max_browse_seconds','max_comment_sessions','active_start','active_end'}), "interests": interests,
                     "recent": recent, "summaries": summaries, "unfinished": pending, "interactions": interactions,
                     "manual_schedule":manual,"budget_usage": budget, "account": self.engine.account_status, "health": self.engine.health}
         external['recent_comment_reading']=await self.store.call('rows',"SELECT bvid,state,json_extract(analysis,'$.summary') AS summary FROM comment_reads ORDER BY created DESC LIMIT 4")
-        degraded = ""
-        proposal = None
         try:
             proposal = await self.host.generate("plan", external, PlanProposal)
-            tasks = self.validate(proposal, now)
-        except (ValueError, ModelUnavailable) as exc:
-            degraded = type(exc).__name__ + "：计划生成失败，保守降级为休息与复盘"
-            fallback_end = min(time.time() + cfg.schedule_window_seconds('rest'), self.engine.day_end())
-            tasks = [{"id": uid(), "type": "rest", "earliest": time.time(), "deadline": fallback_end, "duration": 30,
-                      "dependencies": [], "payload": {"goal": "休息", "reason": degraded}}]
-            proposal = PlanProposal(theme="保守休息：待模型/计划恢复", tasks=[{
-                "type": "rest", "earliest_start": now.isoformat(), "deadline": datetime.fromtimestamp(fallback_end, ZoneInfo(cfg.timezone)).isoformat(),
-                "goal": "休息并保留真实错误状态", "reason": degraded}])
-            await self.store.call("set", "plan_error", degraded)
-        else:
-            await self.store.call("set", "plan_error", "")
-        payload = proposal.model_dump()
-        payload.update(timezone=cfg.timezone, degraded=bool(degraded), error=degraded)
-        for index, task in enumerate(tasks):
-            if index < len(payload["tasks"]):
-                payload["tasks"][index].update(task["payload"])
-                payload["tasks"][index].update(task_id=task["id"],
-                    earliest_start=datetime.fromtimestamp(task['earliest'],ZoneInfo(cfg.timezone)).isoformat(),
-                    deadline=datetime.fromtimestamp(task['deadline'],ZoneInfo(cfg.timezone)).isoformat())
-        plan_id = await self.store.call("save_plan", day, payload, tasks, reason, revise)
-        await self.store.call("audit", "plan_created", {"plan_id": plan_id, "reason": reason, "degraded": degraded})
-        return {"plan_id": plan_id, "degraded": bool(degraded), "reason": degraded}
+            try:
+                tasks = self.validate(proposal, now, replacing=True)
+            except PlanValidationError as exc:
+                # One semantic repair only; the host independently bounds JSON repair
+                # and accounts every model call against the existing quotas.
+                current_settings = self.engine.config().model_dump(include=set(external["settings"]))
+                repair = {"date": day, "now": now.isoformat(), "timezone": cfg.timezone,
+                          "settings": current_settings, "budget_usage": budget,
+                          "repair": {"error": redact(str(exc)).replace("\n", " ")[:160],
+                                     "previous_proposal": redact(proposal.model_dump(exclude_defaults=True))}}
+                proposal = await self.host.generate("plan", repair, PlanProposal)
+                tasks = self.validate(proposal, self.engine.now(), replacing=True)
+            if not tasks:
+                raise ValueError("没有活动能放入剩余时段或预算")
+            payload = proposal.model_dump()
+            payload.update(timezone=cfg.timezone, tasks=[t['payload'] for t in tasks], omitted=self.omitted)
+            for item, task in zip(payload["tasks"], tasks):
+                item.update(task_id=task["id"])
+            plan_id = await self.store.call("save_plan", day, payload, tasks, reason, revise)
+        except (ValueError, ModelUnavailable, BudgetExceeded, httpx.TransportError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            detail = redact(str(exc)).replace("\n", " ")[:160]
+            message = type(exc).__name__ + "：" + (detail or "计划生成失败，请检查模型配置与额度")
+            await self.store.call("set", "plan_error", message)
+            raise
+        await self.store.call("set", "plan_error", "")
+        await self.store.call("set", "plan_retry", {})
+        await self.store.call("audit", "plan_created", {"plan_id": plan_id, "reason": reason})
+        return {"plan_id": plan_id, "omitted": self.omitted}
 
     async def adapt(self, video_id):
         cfg=self.engine.config()
@@ -91,6 +104,7 @@ class DailyPlanner:
             if len(proposal.tasks)>cfg.max_dynamic_tasks-count:
                 raise ValueError("追加任务超过剩余额度")
             tasks=self.validate(proposal,self.engine.now())
+            omitted = list(self.omitted)
             self.engine.check()
             # 配置可能在模型等待期间改变，事务前再核对。
             if not self.engine.config().adaptive_schedule_enabled:
@@ -125,10 +139,12 @@ class DailyPlanner:
                     if comment_added and budget.get('comment_sessions',0)+comments_reserved+comment_added>cfg.max_comment_sessions:
                         raise ValueError('剩余只读评论额度不足，已有日程优先')
                     for task in tasks:
+                        if self.store.slot_conflicts(db, day, task['earliest'], task['deadline']):
+                            raise ValueError('日程已变化，活动时段发生冲突，请重试')
                         db.execute("INSERT INTO tasks(id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,'queued',?,?,?,?,?,?,?,?)",
                                    (task['id'],day,task['type'],dump({**task['payload'],'origin':'agent','source_video_id':video_id}),task['earliest'],task['deadline'],task['earliest'],task['duration'],dump(task['dependencies']),time.time(),time.time()))
                         db.execute("INSERT INTO schedule_edits VALUES(?,?,?,?,?,?,?)",(uid(),day,'agent_insert',task['id'],dump({'video_id':video_id}),proposal.reason,time.time()))
-                    result={'inserted':[t['id'] for t in tasks],'reason':proposal.reason}
+                    result={'inserted':[t['id'] for t in tasks],'reason':proposal.reason,'omitted':omitted}
                     db.execute("UPDATE adaptive_decisions SET state='completed',payload=? WHERE source_key=?",(dump(result),key))
                     return result
             return await asyncio.to_thread(insert)
@@ -138,61 +154,107 @@ class DailyPlanner:
         finally:
             await self.store.call("execute","UPDATE adaptive_decisions SET state='completed',payload=? WHERE source_key=? AND state='requesting'",(dump({"inserted":[],"reason":"自主追加额度已用完"}),key))
 
-    def validate(self, proposal, now):
+    def validate(self, proposal, now, replacing=False):
         cfg, tasks, ids = self.engine.config(), [], [uid() for _ in proposal.tasks]
-        total_items, total_duration, comment_sessions = 0, 0, 0
+        self.omitted = []
+        occupied = self.store.rows("""SELECT t.earliest,t.deadline FROM tasks t
+            LEFT JOIN task_tombstones d ON d.task_id=t.id LEFT JOIN plans p ON p.id=t.plan_id
+            WHERE t.day=? AND d.task_id IS NULL AND t.deadline>?
+              AND t.type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies','publish')
+              AND t.state IN ('queued','retry','paused','running','succeeded')
+              AND NOT (COALESCE(json_extract(p.payload,'$.degraded'),0)=1 AND COALESCE(json_extract(p.payload,'$.theme'),'') LIKE '保守休息：待模型/计划恢复%')
+              AND (?=0 OR t.plan_id IS NULL OR t.state IN ('running','succeeded') OR json_extract(t.payload,'$._slot_owner') IS NOT NULL OR EXISTS (SELECT 1 FROM tasks c WHERE json_extract(c.payload,'$._slot_owner')=t.id AND c.state IN ('queued','retry','paused','running'))) ORDER BY t.earliest""",
+            (now.date().isoformat(), now.timestamp(), int(replacing)))
+        intervals = [(r['earliest'], r['deadline']) for r in occupied]
+        used = {r['resource']: r['used'] for r in self.store.rows("SELECT resource,used FROM budget WHERE day=?", (now.date().isoformat(),))}
+        total_items = used.get('videos', 0)
+        total_duration = used.get('browse_seconds', 0)
+        comment_sessions = used.get('comment_sessions', 0)
+        # Pending independent activities reserve daily quantities as well as time.
+        pending = self.store.rows("""SELECT type,payload FROM tasks WHERE day=? AND state IN ('queued','retry','paused','running')
+            AND type IN ('discover','explore','watch','read_comments')
+            AND (?=0 OR plan_id IS NULL OR state='running' OR json_extract(payload,'$._slot_owner') IS NOT NULL)""",
+            (now.date().isoformat(), int(replacing)))
+        for row in pending:
+            data = json.loads(row['payload'])
+            if row['type'] == 'read_comments':
+                comment_sessions += 1
+            elif row['type'] in ('discover','explore'):
+                total_items += data.get('max_items', 1)
+            elif row['type'] == 'watch':
+                try:
+                    bvid, page = parse_video(data.get('query', data.get('video','')))
+                    reserved = self.store.rows('SELECT 1 FROM budget_reservations WHERE day=? AND reservation_key=?',
+                                               (now.date().isoformat(), f'watch:{bvid}:p{page}'))
+                    total_items += 0 if reserved else 1
+                except ValueError:
+                    total_items += 1
         previous_end = None
-        occupied_rests = self.store.rows("SELECT t.earliest,t.deadline FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id WHERE t.type='rest' AND d.task_id IS NULL AND t.deadline>? AND t.state NOT IN ('cancelled','skipped','expired','failed') AND (t.plan_id IS NULL OR t.state IN ('running','succeeded') OR ?=1) ORDER BY t.earliest",
-                                        (now.timestamp(),int(isinstance(proposal,ScheduleAdjustment))))
+        previous_type = None
+        accepted = set()
         for index, item in enumerate(proposal.tasks):
             try:
                 self.engine.check_module(item.type)
             except RuntimeError:
-                raise ValueError("计划包含已关闭的模块") from None
-            start, end = datetime.fromisoformat(item.earliest_start), datetime.fromisoformat(item.deadline)
-            start, end = start.astimezone(ZoneInfo(cfg.timezone)), end.astimezone(ZoneInfo(cfg.timezone))
-            if start.date() != now.date() or end.date() != now.date() or end.timestamp() <= time.time():
-                raise ValueError("任务超出当日或已经过期")
-            window = cfg.schedule_window_seconds(item.type, (end-start).total_seconds())
+                raise PlanValidationError("计划包含已关闭的模块") from None
+            if any(type(x) is not int or x < 0 or x >= index for x in item.depends_on):
+                raise PlanValidationError("任务依赖必须是前序任务索引，禁止循环")
+            if any(x not in accepted for x in item.depends_on):
+                self.omitted.append({'index': index, 'reason': '依赖活动未能安排'})
+                continue
+            if item.type in ('discover', 'explore', 'read_comments') and item.query:
+                try:
+                    self.engine.validate_query(item.query)
+                except RuntimeError:
+                    raise PlanValidationError("计划检索词须逐字包含允许主题且不能包含排除主题") from None
+            if item.type == 'watch':
+                parse_video(item.query)
+            start = datetime.fromisoformat(item.earliest_start).astimezone(ZoneInfo(cfg.timezone)) if item.earliest_start else now
+            end = datetime.fromisoformat(item.deadline).astimezone(ZoneInfo(cfg.timezone)) if item.deadline else now.replace(hour=23, minute=59, second=59, microsecond=0)
+            if start.date() != now.date() or end.date() != now.date():
+                raise ValueError("任务时间须在当天")
+            requested = (end-start).total_seconds() if item.earliest_start and item.deadline else None
+            window = cfg.schedule_window_seconds(item.type, requested)
             earliest = max(start.timestamp(), now.timestamp(), time.time())
             if previous_end is not None:
-                # An explicit rest already provides a break; don't add another gap around it.
-                gap = 0 if item.type=='rest' or tasks[-1]['type']=='rest' else cfg.schedule_gap_minutes * 60
-                earliest = max(earliest, previous_end + gap)
-            if item.type != 'rest':
-                for rest in occupied_rests:
-                    if earliest < rest['deadline'] and earliest+window > rest['earliest']:
-                        earliest = rest['deadline']
+                earliest = max(earliest, previous_end + (0 if item.type == 'rest' or previous_type == 'rest' else cfg.schedule_gap_minutes*60))
+            day_end = self.engine.day_end()
+            if item.type not in ('rest', 'memory', 'review'):
+                hour, minute = map(int, cfg.active_start.split(':'))
+                active_start = now.replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
+                hour, minute = map(int, cfg.active_end.split(':'))
+                active_end = now.replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
+                midnight = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+                windows = [(active_start, active_end)] if active_start <= active_end else [(midnight, active_end), (active_start, day_end)]
+            else:
+                windows = [(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp(), day_end)]
+            # Legacy timestamps specify preferences, not a fixed calendar reservation.
+            placed = None
+            for window_start, window_end in windows:
+                candidate = max(earliest, window_start)
+                for lo, hi in sorted(intervals):
+                    if candidate < hi and candidate + window > lo:
+                        candidate = hi
+                if candidate + window <= window_end:
+                    placed = candidate
+                    break
+            add_items = item.max_items if item.type in ('discover','explore') else 1 if item.type == 'watch' else 0
+            add_duration = item.max_duration_seconds if item.type not in ('rest','memory','review','read_comments') else 0
+            add_comments = int(item.type == 'read_comments')
+            if placed is None:
+                self.omitted.append({'index': index, 'reason': '剩余时段不足'})
+                continue
+            earliest = placed
+            if total_items + add_items > cfg.max_videos or total_duration + add_duration > cfg.max_browse_seconds or comment_sessions + add_comments > cfg.max_comment_sessions:
+                self.omitted.append({'index': index, 'reason': '剩余预算不足'})
+                continue
+            total_items += add_items; total_duration += add_duration; comment_sessions += add_comments
             start = datetime.fromtimestamp(earliest, ZoneInfo(cfg.timezone))
-            end = min(start + timedelta(seconds=window), start.replace(hour=23,minute=59,second=59,microsecond=0))
-            if start.date() != now.date() or (end-start).total_seconds()<10:
-                raise ValueError("日程与休息时段无法放入当天，请减少任务或调整间隔")
-            if any(type(x) is not int or x < 0 or x >= index for x in item.depends_on):
-                raise ValueError("任务依赖必须是前序任务索引，禁止循环")
-            if item.type not in ("rest", "memory", "review"):
-                if not self.engine.active(start) or not self.engine.active(end):
-                    raise ValueError("任务超出允许活跃时段")
-                if item.type in ("discover", "explore", "read_comments"):
-                    if item.query:
-                        try:
-                            self.engine.validate_query(item.query)
-                        except RuntimeError:
-                            raise ValueError("计划检索词超出允许主题") from None
-                    if item.type=='read_comments':
-                        comment_sessions+=1
-                    else:
-                        total_items += item.max_items
-                if item.type == "watch":
-                    from .bilibili_adapter import parse_video
-                    parse_video(item.query)
-                    total_items += 1
-                if item.type!='read_comments':total_duration += item.max_duration_seconds
-            duration = min(item.max_duration_seconds, cfg.task_timeout_seconds, int((end-start).total_seconds()))
-            task_payload = {**item.model_dump(), "earliest_start": start.isoformat(), "deadline": end.isoformat(),
-                            "max_duration_seconds": duration}
-            tasks.append({"id": ids[index], "type": item.type, "earliest": start.timestamp(), "deadline": end.timestamp(),
-                          "duration": duration, "dependencies": [ids[x] for x in item.depends_on], "payload": task_payload})
-            previous_end = end.timestamp()
-        if total_items > cfg.max_videos or total_duration > cfg.max_browse_seconds or comment_sessions>cfg.max_comment_sessions:
-            raise ValueError("计划超过每日数量或时间预算")
+            end = datetime.fromtimestamp(earliest + window, ZoneInfo(cfg.timezone))
+            duration = min(item.max_duration_seconds, cfg.task_timeout_seconds, int(window))
+            task_payload = {**item.model_dump(), 'earliest_start': start.isoformat(), 'deadline': end.isoformat(), 'max_duration_seconds': duration}
+            tasks.append({'id': ids[index], 'type': item.type, 'earliest': earliest, 'deadline': earliest+window,
+                          'duration': duration, 'dependencies': [ids[x] for x in item.depends_on], 'payload': task_payload})
+            accepted.add(index); intervals.append((earliest, earliest+window))
+            previous_end = earliest+window; previous_type = item.type
         return tasks

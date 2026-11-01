@@ -7,7 +7,7 @@
 
 插件 ID：**`antinova.maibot-bililife`**。
 
-本文对应当前 **0.2.6 发布源码与安装包**。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
+本文对应当前 main 分支和 **0.2.6 日程修复手动安装包**。官方插件中心及不可变的 `v0.2.6` 标签仍指向原始 0.2.6 版本；要使用本文所述日程修复，需要手动导入修复包。接口定义以 [plugin.py](plugin.py)、[WebUI 声明](webui.json) 和 [webui_service.py](webui_service.py) 为准；业务默认值与校验以 [configuration.py](configuration.py) 为准。内部 Python 类方法不作为公共远程接口承诺。
 
 ## 导航
 
@@ -55,7 +55,7 @@ flowchart LR
 
 清单声明的宿主兼容范围为 **MaiBot 1.3.14–1.3.99**，SDK 仍限定为 **maibot-plugin-sdk 2.16.0**；插件类型为 `integration`（外部平台集成）。实际验证环境为 **MaiBot 1.3.14 / SDK 2.16.0 / Dashboard 1.9.8 / Python 3.12**，范围内其他宿主补丁版本尚未逐一验证。关键帧、ASR、音频和视频片段处理需要服务器可执行的 FFmpeg。
 
-1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `antinova.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件，在 MaiBot 插件管理导入并启用。官方插件中心通过该 Release 标签的固定提交安装；手动导入使用附件中的插件 ZIP。
+1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `antinova.maibot-bililife-0.2.6-schedule-fix.zip`，用 `antinova.maibot-bililife-0.2.6-schedule-fix.zip.sha256` 核对后，在 MaiBot 插件管理中手动导入并启用。官方插件中心和标准包 `antinova.maibot-bililife-0.2.6.zip` 仍为原始 0.2.6，不包含此日程修复。
 2. 打开 BiliLife **设置总览**生成二维码，使用 B 站客户端完成独立扫码。
 3. 在**模型**选择文本模型及需要的媒体模型；在**浏览与理解**选择理解方式、兴趣主题与每日额度。
 4. 在**每日安排**生成计划或等待自动生成。日程可包含只读评论，不要求预先指定视频。
@@ -107,9 +107,9 @@ flowchart LR
 | `schedule_brief_minutes` | int | `15` | 5～30 分钟 | 回复、评论、记忆整理和复盘采用较轻量的时段，自动计划为 5 分钟至此值之间，默认入队窗口使用此值。后台实际调用仍受 task_timeout_seconds 限制。 |
 | `schedule_gap_minutes` | int | `30` | 0～180 分钟 | 同一批相邻活动之间的最小自由间隔，也用于分开多个后续观看；显式休息前后不重复添加间隔。0 允许连续安排。过密提议会顺延，超出当天或活跃范围则校验失败。 |
 | `schedule_rest_minutes` | int | `60` | 15～360 分钟，且 ≤schedule_rest_max_minutes | 自动休息的最短时段，也是手动插入未填写结束时间时的默认休息长度。新浏览和发布在休息区间内暂停；内部整理和发布结果核对仍可运行。可从日程删除该休息项提前结束。 |
-| `schedule_rest_max_minutes` | int | `180` | 15～360 分钟，且 ≥schedule_rest_minutes | 自动休息时段的上限，允许午休或放空有不同长度；临近业务日结束时按剩余当日时间截断，不跨日延伸。未排任务的空白也可保留为自由时间。 |
+| `schedule_rest_max_minutes` | int | `180` | 15～360 分钟，且 ≥schedule_rest_minutes | 自动休息时段的上限，允许午休或放空有不同长度；当日剩余时间不足以容纳完整自动休息时会省略并说明原因，不跨日延伸。未排任务的空白也可保留为自由时间。 |
 | `timezone` | str | `"Asia/Shanghai"` | 有效 IANA 时区 | 决定业务日期、活跃时段、计划与额度归属。已有发布记录时 API 拒绝更改，需先处理额度迁移。 |
-| `plan_time` | str | `"09:00"` | HH:MM | 每日到此时间后，若无有效主计划及待执行生成任务则自动入队；停机后当日恢复也会补检查。 |
+| `plan_time` | str | `"09:00"` | HH:MM | 每日到此时间后，若无有效主计划及待执行生成任务则自动入队；模型返回结构正确但模块、检索词或依赖无效时，单轮计划最多修复一次，修复仍无效则报错；失败后按持久化退避最多自动发起六轮计划任务，重启沿用退避状态；每轮内部网络重试仍按 max_retries 与任务截止时间限制。可手动重试并仍受模型额度限制。 |
 | `active_start` | str | `"09:00"` | HH:MM | 浏览、只读评论、发布和回复任务的活跃开始时间；与结束时间相同时仅该分钟活跃。 |
 | `active_end` | str | `"22:30"` | HH:MM | 活跃结束时间，边界包含在内；开始晚于结束时表示跨午夜时段。休息时外部生活任务等待，但仍受截止时间约束。 |
 | `task_timeout_seconds` | int | `300` | 30～1800 秒 | 一般即时任务默认执行超时；手动日程 duration 的上限，计划任务实际超时取提议与此值的较小值。扫码、账号及模型诊断另设时限。 |
@@ -397,7 +397,7 @@ await maibot.query("snapshot", {section: "schedule_board"});
 | --- | --- |
 | `overview` | account、modules、paused、posting_stopped、blocked、timezone、current_task（或 null）、budget、progress、health、plan_error、config_error、最近 3 条 summaries |
 | `settings` | settings（平铺有效设置）、schema（Settings JSON Schema）、account、modules（字段分组）、revision、paused、posting_stopped |
-| `schedule_board` / `schedule_board:YYYY-MM-DD` | date、is_today、timezone、now、paused、items、deleted、adaptations、plan（或 null）；items 最多 500 条，排除已删除显示项，payload 已解析；deleted 最多 20 条，adaptations 最多 10 条。日期须标准 YYYY-MM-DD，距今天不超过 365 天 |
+| `schedule_board` / `schedule_board:YYYY-MM-DD` | date、is_today、timezone、now、paused、plan_error、items、issues、deleted、adaptations、plan（或 null）；items 最多 500 条，包含有效生活活动并将内部步骤归到所属活动的 children；issues 最多 40 条，列出失败及未完成状态而不占用钟面；deleted 最多 20 条，adaptations 最多 10 条。日期须标准 YYYY-MM-DD，距今天不超过 365 天 |
 | `interaction_stats` | items 为 kind、state、count 分组统计，另含 day；仅当日 |
 | `schedule` | id、type、state、day、earliest、deadline、attempts、error、payload |
 | `plans` | id、day、version、active、reason、created |
@@ -419,13 +419,13 @@ await maibot.query("snapshot", {section: "schedule_board"});
 
 overview 中的 account 为 `{state,uid,name}`；current_task 为 `{id,type,day,deadline}` 或 null；rest_until 是当前休息结束的 Unix 秒数，无休息时为 0；budget 项为 `{day,resource,used}`；progress 项为 `{state,count}`；summaries 项为 `{day,text}`。health 含 ffmpeg、concurrency、host_long_term_memory、memory_method、asr_enabled，是运行时健康快照；修改配置后的有效值以 settings 为准。modules 为模块启用布尔值集合。
 
-schedule_board.items 为完整 tasks 行，payload 解析成对象；deleted 项含 id/type/state/reason/created；adaptations 项含 video_id/state/payload/created，其中 payload 已解析。plan 为 id/version/reason 加已解析 payload。普通列表保留数据库数值标志（例如 frozen、active、rolled_back 为 0/1），不统一转成布尔值。
+schedule_board.items 为有效活动的 tasks 行，payload 解析成对象；内部步骤归入所属活动的 children。issues 项含 id/type/state/error/earliest，显示失败、超时、阻塞或未知结果；这些历史状态不占用钟面。deleted 项含 id/type/state/reason/created；adaptations 项含 video_id/state/payload/created，其中 payload 已解析。plan_error 提供最近计划生成错误，plan 为 id/version/reason 加已解析 payload。普通列表保留数据库数值标志（例如 frozen、active、rolled_back 为 0/1），不统一转成布尔值。
 
 ### `detail` · 单条详情
 
 - **用途：**读取完整记录、任务执行结果及证据。
 - **参数：**section：必填 str，≤40 字符，仅 schedule / plans / browse / comment_reads / interactions / operations / threads / memories / changes / summaries / persona_history；record_id：必填 str，≤200 字符。summaries 使用 YYYY-MM-DD，其余用记录 ID。
-- **返回：**对应表的完整记录；payload、evidence、analysis、result、dependencies、topics、sources、metadata、comments 若非空会解析为 JSON。schedule 额外返回 attempts_log（每项 id/task_id/number/started/finished/outcome/error）；browse 额外返回 memory_status（每项 id/status/context_status/host_status）。不存在则错误。
+- **返回：**对应表的完整记录；payload、evidence、analysis、result、dependencies、topics、sources、metadata、comments 若非空会解析为 JSON。schedule 额外返回 attempts_log（每项 id/task_id/number/started/finished/outcome/error）和 children（各内部步骤的 id/type/state/error；父步骤成功不代表子步骤成功）；browse 额外返回 memory_status（每项 id/status/context_status/host_status）。不存在则错误。
 - **示例：**
 
 ```javascript
@@ -531,7 +531,7 @@ await maibot.action("enqueue", {kind: "read_comments", data: JSON.stringify({que
 | `read_comments` | query：str，默认空，空时模型自主选主题；不读取字幕、音轨或画面 | comment_read_id、watched=false、source、analysis；或 empty=true；或 skipped=true/reason |
 | `draft` | video_id：str，可省略；缺省取最近的已理解记录，不存在则失败 | drafted=true/draft_id，或 drafted=false/reason |
 | `memory` | video_id：str，可省略；有值提取该经历，无值处理最多 3 个尚无记忆的已理解记录 | 提取状态对象或对象数组，完整分支见下文 |
-| `plan` | revise：bool，默认 false；reason：str，默认“每日主计划”；非修订时复用当日有效主计划 | plan_id/existing=true，或 plan_id/degraded/reason |
+| `plan` | revise：bool，默认 false；reason：str，默认“每日主计划”；非修订时复用当日有效主计划 | plan_id/existing=true，或 plan_id/omitted；失败返回真实错误并保留原计划 |
 | `review` | `{}` | day、summary、degraded、validation_error；summary 含 summary（文本）、learned、unresolved、tomorrow（字符串数组） |
 | `replies` | `{}` | 已处理回复的草稿结果数组；可选择不回复 |
 | `account` | `{}` | state、uid、name，并更新总览账号状态 |
@@ -577,12 +577,12 @@ await maibot.action("schedule_change", {
 
 | action | data 字段与影响 |
 | --- | --- |
-| `regenerate` | 仅 reason；入队 plan，revise=true，成功后新主计划成为有效版本，取消旧计划未完成任务，手动独立日程保留 |
+| `regenerate` | 仅 reason；入队 plan，revise=true，成功后新主计划成为有效版本，替换旧计划未开始的任务；失败保留原计划，手动独立日程与进行中的活动保留 |
 | `insert` | kind 必填，可为 watch/discover/explore/read_comments/draft/replies/memory/review/rest；payload 默认 {}、按 enqueue 对应白名单校验；date 默认今天；start 默认当前 HH:MM；end 未填写时按任务类型使用浏览、轻量整理或休息的默认时段，不跨日；duration 默认 task_timeout_seconds，须为整数 10～该设置；另含 reason |
 | `delete` | task_id 必填，另可传 reason；未完成任务会取消并写显示墓碑，已完成记录只隐藏；运行中的普通任务会收到取消，running/unknown 的 publish 任务拒绝删除 |
 | `restore` | task_id 必填，另可传 reason；只移除显示墓碑，不重新执行已取消任务 |
 
-插入日期允许今天至今天+7 天；结束晚于开始且不能已过期，不支持一次插入跨午夜时段。watch/discover/explore/read_comments/draft/replies 的起止均须在活跃时间。kind=watch 时 payload.query 必须提供合法视频标识。
+独立活动及发布时段互斥，插入冲突时拒绝；自动发布遇冲突保留草稿等待下次检查。登录、账号与未知发布结果核对等控制任务不占生活时段。发现和观看的内部步骤共享父活动截止时间，不保证截止前完成。计划由程序分配空闲时段，放不下的活动及依赖会注明原因并省略。插入日期允许今天至今天+7 天；结束晚于开始且不能已过期，不支持一次插入跨午夜时段。watch/discover/explore/read_comments/draft/replies 的起止均须在活跃时间。kind=watch 时 payload.query 必须提供合法视频标识。
 
 ## 配置与模型接口
 
@@ -840,7 +840,7 @@ console.log(report.audit);
 | 视频 evidence | types、segments（含时间和文本）、frames（采样位置与标签）、limitations、coverage、complete=false；媒体路径另记录 understanding_mode、media_segments 及音轨是否包含 |
 | 视频 analysis | summary、details（claim_type/text/evidence_quote）、feeling、questions、uncertainty、visual_required、suitable_for_comment、reason，程序追加 context_sufficient 与 topic |
 | 评论阅读 analysis | summary、points（rpid/quote/interpretation）、feeling、questions、uncertainty、coverage、topic、comment_count、watched=false、suitable_for_video_comment=false |
-| 计划 payload | theme、tasks、timezone、degraded、error，以及程序生成的 plan_id、date、version；任务带时间、目标、理由、数量与依赖 |
+| 计划 payload | theme、tasks、timezone、omitted，以及程序生成的 plan_id、date、version；任务带时间、目标、理由、数量与依赖，omitted 标明放不下或预算不足的提议及原因 |
 | 互动记录 | draft 的 quote/reason/root/parent/target_uid/event_id；operations 的账号、业务日期、正文、rpid、state 与 error |
 | 复盘 payload | version、degraded、validation_error、review（结构化复盘）、records（真实执行资料）；计划未执行项不写成经历 |
 
@@ -873,7 +873,7 @@ data_dir/
 
 `security.py` 的 `redact` 基于正则匹配，可能误报或漏报，仅用于日志、审计和导出的补充脱敏，不是凭据隔离边界。凭据独立存储、公开响应限制字段以及供应商错误只保留错误码与分类说明，均先于这层兜底；不能把密钥放入普通数据后仅依赖它过滤。
 
-构建 WebUI：`python scripts/build_webui.py`；生成插件包：`python scripts/package.py`。运行需要宿主 SDK 和清单依赖，不通过安装 Python wheel 替代 MaiBot 插件导入。发行版本来自 `_manifest.json`，本 README 修改不改变版本。
+构建 WebUI：`python scripts/build_webui.py`；生成插件包：`python scripts/package.py`（脚本使用标准版本文件名；日程修复附件使用单独的修复包名和校验文件）。运行需要宿主 SDK 和清单依赖，不通过安装 Python wheel 替代 MaiBot 插件导入。发行版本来自 `_manifest.json`，本 README 修改不改变版本。
 
 评论与回复发布存在一项私有依赖：`vendor/client.py` 的 `publish()` 使用 `bilibili-api-python==17.4.2` 的 `Api._prepare_request()` 准备签名请求，再由插件发送单次 POST，以避免通用请求包装器自动重试写请求。该方法不属于稳定公共 API，上游改变签名或返回结构可能导致发布失败；不要单独升级平台库。升级前的复核要求见 [私有接口依赖说明](docs/COMPATIBILITY.md#评论发布的私有接口依赖)。
 

@@ -37,15 +37,33 @@ class WebUIService:
             chosen=datetime.fromisoformat(day)
             if chosen.strftime("%Y-%m-%d")!=day or abs((chosen.date()-engine.now().date()).days)>365:
                 raise ValueError("日程日期超出可查询范围")
-            rows=await self.store.call("rows","SELECT t.* FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id WHERE t.day=? AND d.task_id IS NULL ORDER BY t.earliest LIMIT 500",(day,))
+            rows=await self.store.call("rows","SELECT t.* FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id LEFT JOIN plans p ON p.id=t.plan_id WHERE t.day=? AND d.task_id IS NULL AND t.state IN ('queued','retry','paused','running','succeeded') AND t.type IN ('watch','discover','explore','read_comments','rest','memory','review','draft','replies','publish') AND NOT (t.type='rest' AND COALESCE(json_extract(p.payload,'$.degraded'),0)=1 AND COALESCE(json_extract(p.payload,'$.theme'),'') LIKE '保守休息：待模型/计划恢复%') ORDER BY t.earliest LIMIT 500",(day,))
+            issues=await self.store.call("rows", "SELECT id,type,state,error,earliest FROM tasks WHERE day=? AND state IN ('failed','timeout','blocked_model','blocked_policy','blocked_login','budget_exhausted','unknown','expired') ORDER BY updated DESC LIMIT 40", (day,))
             deleted=await self.store.call("rows","SELECT t.id,t.type,t.state,d.reason,d.created FROM task_tombstones d JOIN tasks t ON t.id=d.task_id WHERE t.day=? ORDER BY d.created DESC LIMIT 20",(day,))
             plans=await self.store.call("rows","SELECT id,version,payload,reason FROM plans WHERE day=? AND active=1",(day,))
             for row in rows:
                 row["payload"]=json.loads(row["payload"])
+            # Keep child steps attached to their owning activity instead of drawing
+            # their shared reservation as independent overlapping calendar slots.
+            by_id = {r['id']: r for r in rows}
+            visible = []
+            for row in rows:
+                owner = row['payload'].get('_slot_owner')
+                if owner and owner in by_id:
+                    by_id[owner].setdefault('children', []).append(row)
+                else:
+                    visible.append(row)
+            incomplete = await self.store.call('rows', "SELECT DISTINCT json_extract(payload,'$._slot_owner') AS owner FROM tasks WHERE day=? AND json_extract(payload,'$._slot_owner') IS NOT NULL AND state IN ('failed','timeout','blocked_model','blocked_policy','blocked_login','budget_exhausted','unknown','expired','skipped','cancelled')", (day,))
+            incomplete_owners = {item['owner'] for item in incomplete}
+            for row in visible:
+                row['activity_partial'] = row['id'] in incomplete_owners
+                if row.get('children') and any(c['state'] in ('queued','retry','running','paused') for c in row['children']) and row['state'] == 'succeeded':
+                    row['state'] = 'running'
+            rows = visible
             adaptations=await self.store.call("rows","SELECT video_id,state,payload,created FROM adaptive_decisions WHERE day=? ORDER BY created DESC LIMIT 10",(day,))
             for item in adaptations:
                 item["payload"]=json.loads(item["payload"])
-            return redact({"date":day,"is_today":day==engine.day(),"timezone":engine.config().timezone,"now":time.time(),"paused":engine.paused,"items":rows,"deleted":deleted,"adaptations":adaptations,"plan":{**plans[0],"payload":json.loads(plans[0]["payload"])} if plans else None})
+            return redact({"date":day,"is_today":day==engine.day(),"timezone":engine.config().timezone,"now":time.time(),"paused":engine.paused,"plan_error":await self.store.call("get", "plan_error", ""),"issues":issues,"items":rows,"deleted":deleted,"adaptations":adaptations,"plan":{**plans[0],"payload":json.loads(plans[0]["payload"])} if plans else None})
         if section in ("comment_drafts","reply_drafts"):
             kind="reply" if section=="reply_drafts" else "comment"
             rows=await self.store.call("rows","SELECT id,video_id,kind,text,status,reason,root,parent,created FROM drafts WHERE kind=? ORDER BY created DESC LIMIT 20 OFFSET ?",(kind,(page-1)*20))
@@ -95,6 +113,7 @@ class WebUIService:
             row["memory_status"] = await self.store.call("rows", "SELECT id,status,context_status,host_status FROM memories WHERE video_id=?", (record_id,))
         if section == "schedule":
             row["attempts_log"] = await self.store.call("rows", "SELECT * FROM attempts WHERE task_id=? ORDER BY number", (record_id,))
+            row["children"] = await self.store.call("rows", "SELECT id,type,state,error FROM tasks WHERE json_extract(payload,'$._slot_owner')=? ORDER BY created", (record_id,))
         return redact(row)
 
     async def control(self, action):
@@ -197,10 +216,13 @@ class WebUIService:
             raise ValueError("任务不存在")
         row = rows[0]
         if action in ("cancel", "skip"):
-            self.engine.cancelled.add(task_id)
             await self.store.call("cancel", task_id, action == "skip")
-            if self.engine.current and self.engine.current["id"] == task_id and self.engine.running_job:
-                self.engine.running_job.cancel()
+            self.engine.cancelled.add(task_id)
+            current = self.engine.current
+            if current and (current['id'] == task_id or json.loads(current['payload']).get('_slot_owner') == task_id):
+                self.engine.cancelled.add(current['id'])
+                if self.engine.running_job:
+                    self.engine.running_job.cancel()
         elif action == "resume":
             if row["state"] in ("running", "succeeded", "unknown", "cancelled", "skipped", "expired") or row["type"] == "publish":
                 raise ValueError("此任务不能恢复；未知发布需核对，取消任务不可重新执行")
@@ -392,8 +414,11 @@ class WebUIService:
             if action=="delete":
                 row=await self.store.call("delete_task",task_id,reason)
                 self.engine.cancelled.add(task_id)
-                if self.engine.current and self.engine.current["id"]==task_id and self.engine.running_job:
-                    self.engine.running_job.cancel()
+                current = self.engine.current
+                if current and (current['id'] == task_id or json.loads(current['payload']).get('_slot_owner') == task_id):
+                    self.engine.cancelled.add(current['id'])
+                    if self.engine.running_job:
+                        self.engine.running_job.cancel()
             else:
                 await self.store.call("execute","DELETE FROM task_tombstones WHERE task_id=?",(task_id,))
             await self.store.call("audit","schedule_"+action,{"task_id":task_id,"reason":reason,"note":"恢复只恢复显示，不重新执行已取消任务"})
