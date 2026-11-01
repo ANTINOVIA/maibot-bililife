@@ -89,20 +89,28 @@ async function moduleForm(name,collapsed=false) {
   if(name==='schedule')p.append(el('p','浏览、回复整理和休息采用不同节奏，休息更长，不必排满一天。休息时暂停新的浏览和发布；可在日程中删除该项提前结束。执行超时单独控制。','hint'));
   if(name==='comments')p.append(el('p','提示词用于新评论与回复生成。避免表达会在生成后与发布前检查；已有草稿保留原文，命中时需修改后发布。留空列表可关闭表达检查。','hint'),button('恢复默认风格提示词',()=>{nodes.comment_prompt.value=data.schema.properties.comment_prompt.default;notify('已填入默认提示词，点击“保存本模块”后生效');}));
   if(name==='browse')p.append(el('p','先选择理解方式，再在“模型”配置对应用途。关键帧使用视觉模型；视频片段直接提交受限片段给视频模型；两条路径互斥，不会因另一模型已配置而自动切换。','hint'));
-  const actions=toolbar(button('保存本模块',async()=>{const patch=Object.fromEntries(Object.entries(controls).map(([k,read])=>[k,read()]));await call('action','settings_patch',{module:name,data:JSON.stringify(patch)});settingsData=null;const latest=(await loadSettings()).settings;for(const[k,node]of Object.entries(nodes)){if(node.type==='checkbox')node.checked=latest[k];else node.value=Array.isArray(latest[k])?latest[k].join('\n'):latest[k];}notify(info.title+'已保存');},'primary'));actions.classList.add('form-actions');p.append(actions);
+  const actions=toolbar(button('保存本模块',async()=>{const patch=Object.fromEntries(Object.entries(controls).map(([k,read])=>[k,read()]));await call('action','settings_patch',{module:name,data:JSON.stringify(patch)});settingsData=null;const latest=(await loadSettings()).settings;for(const[k,node]of Object.entries(nodes)){if(node.type==='checkbox')node.checked=latest[k];else node.value=Array.isArray(latest[k])?latest[k].join('\n'):latest[k];}syncModuleTiles(latest);notify(info.title+'已保存');},'primary'));actions.classList.add('form-actions');p.append(actions);
   if(collapsed){const d=el('details');d.append(el('summary','调整'+info.title),p);return d;}return p;
 }
 
 function moduleSummary(name,c) {
   return ({sharing:`${c.video_share_enabled?'已开启':'默认关闭'} · 每日最多 ${c.video_share_daily_limit} 次 · ${c.video_share_format==='qq_ark'?'QQ 大图卡片':'文本链接'}`,schedule:`${c.plan_time} 生成 · 浏览≤${c.schedule_task_minutes}分钟 · 休息${c.schedule_rest_minutes}—${c.schedule_rest_max_minutes}分钟`,browse:`每天最多 ${c.max_videos} 条 · ${Math.round(c.max_browse_seconds/60)} 分钟`,comments:`每日 ${c.max_comments} 条 · ${c.auto_publish_comments?'自动发布已开':'保留草稿，手动发布'}`,replies:`每日 ${c.max_replies} 条 · 每 ${Math.round(c.reply_interval_seconds/60)} 分钟检查`,memory:`每次最多召回 ${c.recall_limit} 条 · ${c.recall_chars} 字`,persona:`${c.evolution_enabled?'允许兴趣缓慢调整':'兴趣自动变化已关'} · ${c.expression_preferences.length} 项表达偏好`,review:`${c.review_time} 复盘 · ${c.summary_stream_id?'推送到指定会话':'不向会话推送'}`,models:`每日 ${c.max_model_calls} 次 · ${c.max_tokens.toLocaleString()} Token`,resources:`${c.max_storage_mb} MiB · 记录保留 ${c.retention_days} 天`,prompts:'运行阶段的管理员补充，支持 TOML'})[name];
 }
+function syncModuleTiles(cfg) {
+  for(const tile of main.querySelectorAll('.module-tile[data-module]')) {
+    tile.querySelector('.tile-summary').textContent=moduleSummary(tile.dataset.module,cfg);
+    const control=tile.querySelector('input[type="checkbox"]');
+    if(control&&tile.dataset.switch)control.checked=!!cfg[tile.dataset.switch];
+  }
+}
+
 async function moduleTiles(all=false) {
   const d=await loadSettings(),g=el('div','','grid');
   const switches={sharing:'video_share_enabled',schedule:'planner_enabled',browse:'browsing_enabled',comments:'comments_enabled',replies:'replies_enabled',memory:'memory_enabled',persona:'evolution_enabled',review:'review_enabled'};
   for(const [name,info]of Object.entries(d.modules)){
     if(!all&&['resources','prompts','models'].includes(name))continue;
-    const p=panel(),h=el('div','','row-head');h.append(el('h3',info.title));
-    if(switches[name])h.append(toggle('启用',d.settings[switches[name]],async checked=>{await call('action','settings_patch',{module:name,data:JSON.stringify({[switches[name]]:checked})});settingsData=null;notify(info.title+(checked?'已启用':'已关闭'));}).node);
+    const p=panel(),h=el('div','','row-head');p.dataset.module=name;h.append(el('h3',info.title));
+    if(switches[name]){p.dataset.switch=switches[name];h.append(toggle('启用',d.settings[switches[name]],async checked=>{await call('action','settings_patch',{module:name,data:JSON.stringify({[switches[name]]:checked})});settingsData=null;syncModuleTiles((await loadSettings()).settings);notify(info.title+(checked?'已启用':'已关闭'));}).node);}
     p.classList.add('module-tile');p.append(h,el('p',moduleSummary(name,d.settings),'tile-summary'),el('p',info.description,'muted'),button('打开'+info.title,async()=>{if(['sharing','resources','prompts','models','review'].includes(name)){if(name==='models')await nav('providers');else if(name==='review')await nav('schedule',{section:'summaries'});else await openModule(name);}else await nav(targets[name],name==='comments'||name==='replies'?{module:name}:{});},'link'));g.append(p);
   }return g;
 }
