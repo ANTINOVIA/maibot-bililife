@@ -55,6 +55,7 @@ class WebUIService:
             rows=await self.store.call("rows","SELECT kind,state,COUNT(*) AS count FROM operations WHERE day=? GROUP BY kind,state",(engine.day(),))
             return {"items":rows,"day":engine.day()}
         tables = {
+            "shares": ("video_shares", "id,video_id,stream_id,format,state,message_id,created,updated", "created DESC"),
             "schedule": ("tasks", "id,type,state,day,earliest,deadline,attempts,error,payload", "created DESC"),
             "plans": ("plans", "id,day,version,active,reason,created", "created DESC"),
             "browse": ("videos", "id,bvid,page,state,reason,created,json_extract(payload,'$.title') AS title,json_extract(evidence,'$.coverage') AS coverage", "created DESC"),
@@ -78,6 +79,7 @@ class WebUIService:
 
     async def detail(self, section, record_id):
         mapping = {"schedule": ("tasks", "id"), "plans": ("plans", "id"), "browse": ("videos", "id"),
+                   "shares": ("video_shares", "id"),
                    "comment_reads": ("comment_reads", "id"),
                    "interactions": ("drafts", "id"), "operations": ("operations", "id"), "threads": ("reply_events", "id"),
                    "memories": ("memories", "id"), "changes": ("persona_changes", "id"), "summaries": ("summaries", "day"),"persona_history":("persona_interventions","id")}

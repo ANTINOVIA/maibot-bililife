@@ -75,6 +75,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -371,6 +381,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -667,6 +687,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -963,6 +993,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1259,6 +1299,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1555,6 +1605,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1851,6 +1911,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -2147,6 +2217,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -2443,6 +2523,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {

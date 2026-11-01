@@ -81,6 +81,11 @@ class Settings(BaseModel):
     recall_limit: int = 4
     recall_chars: int = 2400
     summary_stream_id: str = ""
+    video_share_enabled: bool = False
+    video_share_stream_id: str = ""
+    video_share_format: Literal["qq_ark", "text"] = "qq_ark"
+    video_share_daily_limit: int = 2
+    video_share_cooldown_seconds: int = 10800
     prompt_overrides: Dict[str, str] = {}
 
     @field_validator("timezone")
@@ -102,6 +107,10 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
+        if len(self.video_share_stream_id) > 200 or (self.video_share_enabled and not self.video_share_stream_id.strip()):
+            raise ValueError("视频分享需要指定目标会话，ID最长200字符")
+        if not 0 <= self.video_share_daily_limit <= 10 or not 60 <= self.video_share_cooldown_seconds <= 86400:
+            raise ValueError("视频分享每日上限须为0..10，冷却须为60..86400秒")
         if not 3 <= self.schedule_task_minutes <= 60 or not 0 <= self.schedule_gap_minutes <= 180:
             raise ValueError("日程窗口须为3..60分钟，任务间隔须为0..180分钟")
         if not 5 <= self.schedule_brief_minutes <= 30 or not 15 <= self.schedule_rest_minutes <= self.schedule_rest_max_minutes <= 360:

@@ -79,7 +79,8 @@ class BilibiliAdapter(BiliClient):
                 "title": str(info["title"])[:300], "author": str(owner.get("name", ""))[:100],
                 "up_uid": str(owner.get("mid", "")), "description": str(info.get("desc", ""))[:3000],
                 "duration": int(part.get("duration", info.get("duration", 0))),
-                "part_title": str(part.get("part", ""))[:300], "url": f"https://www.bilibili.com/video/{bvid}?p={page}"}
+                "part_title": str(part.get("part", ""))[:300], "cover_url": str(info.get("pic", ""))[:2000],
+                "url": f"https://www.bilibili.com/video/{bvid}?p={page}"}
 
     async def discover(self, query, uploader="", recommended=False):
         self.check()

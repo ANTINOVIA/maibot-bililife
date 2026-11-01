@@ -1,5 +1,6 @@
 """页面和后端共用的模块字段范围，防止局部保存覆盖其他模块。"""
 MODULES = {
+    "sharing": {"title":"视频分享", "description":"将已理解并保存的真实视频分享到指定聊天，记录回执并避免重复", "fields":["video_share_enabled","video_share_stream_id","video_share_format","video_share_daily_limit","video_share_cooldown_seconds"]},
     "schedule": {"title":"每日安排", "description":"浏览、轻量整理与长休息相间的生活节奏", "fields":["planner_enabled","adaptive_schedule_enabled","max_dynamic_tasks","schedule_task_minutes","schedule_brief_minutes","schedule_gap_minutes","schedule_rest_minutes","schedule_rest_max_minutes","timezone","plan_time","active_start","active_end","task_timeout_seconds","max_retries"]},
     "browse": {"title":"浏览与理解", "description":"自主选题发现、每日浏览量与媒体处理", "fields":["browsing_enabled","max_videos","max_comment_sessions","max_comments_read","max_video_seconds","max_browse_seconds","allowed_topics","excluded_topics","allowed_uploaders","video_understanding_mode","max_frames","enable_asr","segment_seconds","max_download_mb","daily_download_mb"]},
     "comments": {"title":"视频评论", "description":"评论与回复风格提示词、避免表达、主人提醒与每日额度", "fields":["comments_enabled","auto_publish_comments","comment_prompt","comment_avoid_phrases","owner_uid","mention_owner","max_comments","max_per_video","cooldown_seconds"]},

@@ -26,6 +26,7 @@ from .security import guard_unobserved_senses, redact
 from .storage import BudgetExceeded, Storage, dump, uid
 from .vendor.client import LoginRequired, PlatformError, VideoReadError
 from .video_understanding import VideoUnderstanding
+from .video_sharing import VideoSharing
 
 
 class TaskCancelled(RuntimeError):
@@ -86,6 +87,7 @@ class TaskExecutor:
         self.interaction = InteractionService(self)
         self.planner = DailyPlanner(self)
         self.comment_reading = CommentReading(self)
+        self.sharing = VideoSharing(self)
 
     def config(self):
         return self.settings
@@ -156,6 +158,7 @@ class TaskExecutor:
     async def start(self):
         await self.store.call("lock")
         await self.store.call("recover")
+        await self.sharing.recover()
         await self.platform.load()
         self.health = {"ffmpeg": bool(shutil.which("ffmpeg")), "concurrency": 1, "host_long_term_memory": "unsupported",
                        "memory_method": "插件 SQLite 检索工具 + maisaka.context.append", "asr_enabled": self.settings.enable_asr}

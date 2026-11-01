@@ -25,6 +25,7 @@ queries = {
 queries['model_providers']={'api':'model_providers'}
 queries['settings_toml']={'api':'settings_toml','parameters':{'module':s(False,40)}}
 actions = {
+    'share_video': {'api':'share_video','parameters':{'video':s(True,300)}},
     'control': {'api':'control','parameters':{'action':s(True,40)}},
     'enqueue': {'api':'enqueue','parameters':{'kind':s(True,40),'data':s(False,12000)}},
     'task_action': {'api':'task_action','parameters':{'task_id':s(),'action':s(True,30)}},

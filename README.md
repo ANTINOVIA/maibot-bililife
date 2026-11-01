@@ -1,5 +1,7 @@
 # MaiBot BiliLife · 麦麦的 B 站生活
 
+已理解并保存的视频可通过主聊天工具或 WebUI 分享至指定会话，支持 QQ 官方 Ark 大图卡片；默认关闭，保留回执与持久去重。配置和平台限制见 [视频分享说明](docs/VIDEO-SHARING.md)。
+
 [![Version](https://img.shields.io/badge/version-0.2.6-5865F2)](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
