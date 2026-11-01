@@ -115,9 +115,11 @@ class ChatBrowsing:
         result = json.loads(row['result'])
         video_id = result.get('video', {}).get('video_id')
         if video_id:
-            shares = await self.store.call('rows', 'SELECT state,message_id FROM video_shares WHERE video_id=? AND stream_id=?', (video_id, stream_id))
+            shares = await self.store.call('rows', 'SELECT id,state,message_id FROM video_shares WHERE video_id=? AND stream_id=?', (video_id, stream_id))
             if shares:
-                result['sharing'] = {**result.get('sharing', {}), **shares[0], 'sent': shares[0]['state'] == 'sent'}
+                receipt = await self.store.call('get', 'video_share_receipt:' + shares[0]['id'], {})
+                result['sharing'] = {**receipt, 'state': shares[0]['state'], 'message_id': shares[0]['message_id'],
+                                     'sent': shares[0]['state'] == 'sent'}
         return {'success': True, 'request_id': row['id'], 'state': row['state'], 'mode': row['mode'], 'query': row['query'],
                 'share_after': bool(row['share_after']), 'created': row['created'], 'updated': row['updated'],
                 'tasks': [{'task_id': t['id'], 'stage': t['type'], 'state': t['state'], 'error': t['error']} for t in tasks],

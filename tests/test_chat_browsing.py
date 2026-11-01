@@ -86,13 +86,27 @@ async def test_long_first_search_result_is_skipped_before_understanding(engine):
 
 
 async def test_sharing_intent_can_be_added_to_same_running_request(engine):
-    setup(engine)
+    metadata = setup(engine)
     first = await engine.chat_browsing.start('owner', 'search', '机器人', False)
     updated = await engine.chat_browsing.start('owner', 'search', '机器人', True)
     assert updated['duplicate'] and updated['request_id'] == first['request_id'] and updated['share_after']
     await drain(engine)
     assert (await engine.chat_browsing.status('owner'))['result']['sharing']['sent']
     engine.ctx.send.custom.assert_awaited_once()
+    # A later explicit send may succeed after a prior preflight cooldown block.
+    # Status must show that actual receipt without retaining the stale error.
+    other = 'BV1S9xT6zE4e'
+    engine.platform.metadata.return_value = {**metadata, 'bvid': other, 'url': 'https://www.bilibili.com/video/' + other}
+    await engine.chat_browsing.start('owner', 'watch', other, True)
+    await drain(engine)
+    before = await engine.chat_browsing.status('owner')
+    assert before['result']['sharing']['state'] == 'blocked'
+    assert '冷却' in before['result']['sharing']['error']
+    engine.settings.video_share_cooldown_seconds = 0
+    assert (await engine.sharing.share(other + ':p1', 'owner'))['sent']
+    after = await engine.chat_browsing.status('owner')
+    assert after['result']['sharing']['sent'] and 'error' not in after['result']['sharing']
+    assert engine.ctx.send.custom.await_count == 2
     await engine.platform.close()
 
 
