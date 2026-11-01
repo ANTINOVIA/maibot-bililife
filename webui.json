@@ -14,6 +14,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -72,9 +75,34 @@
               "max_length": 40
             }
           }
+        },
+        "chat_task_status": {
+          "api": "chat_task_status",
+          "parameters": {
+            "stream_id": {
+              "type": "string",
+              "required": true,
+              "max_length": 200
+            },
+            "request_id": {
+              "type": "string",
+              "required": false,
+              "max_length": 64
+            }
+          }
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -310,6 +338,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -371,6 +402,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -606,6 +647,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -667,6 +711,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -902,6 +956,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -963,6 +1020,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1198,6 +1265,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -1259,6 +1329,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1494,6 +1574,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -1555,6 +1638,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -1790,6 +1883,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -1851,6 +1947,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -2086,6 +2192,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -2147,6 +2256,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {
@@ -2382,6 +2501,9 @@
       "entry": "webui/index.html",
       "layout": "document",
       "queries": {
+        "sharing_candidates": {
+          "api": "sharing_candidates"
+        },
         "snapshot": {
           "api": "snapshot",
           "parameters": {
@@ -2443,6 +2565,16 @@
         }
       },
       "actions": {
+        "share_video": {
+          "api": "share_video",
+          "parameters": {
+            "video": {
+              "type": "string",
+              "required": true,
+              "max_length": 300
+            }
+          }
+        },
         "control": {
           "api": "control",
           "parameters": {

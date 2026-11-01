@@ -57,6 +57,11 @@ class Storage:
                                (day, 'watch:' + video['id'], dump(resources), video['created']))
                 db.execute("INSERT INTO schema_version VALUES(5,?)", (time.time(),))
         self.path.chmod(0o600)
+        with self.connect() as db:
+            db.executescript((Path(__file__).parent / "migrations/006_video_shares.sql").read_text(encoding="utf-8"))
+            db.execute("INSERT OR IGNORE INTO schema_version VALUES(6,?)", (time.time(),))
+            db.executescript((Path(__file__).parent / "migrations/007_chat_requests.sql").read_text(encoding="utf-8"))
+            db.execute("INSERT OR IGNORE INTO schema_version VALUES(7,?)", (time.time(),))
         self.lock_file = None
 
     @contextmanager

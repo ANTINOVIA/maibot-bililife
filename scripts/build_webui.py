@@ -17,6 +17,7 @@ def s(required=True, max_length=200):
     return {'type':'string','required':required,'max_length':max_length}
 
 queries = {
+    'sharing_candidates': {'api':'sharing_candidates'},
     'snapshot': {'api':'snapshot','parameters':{'section':s(False,40),'page':{'type':'integer','minimum':1,'maximum':1000}}},
     'detail': {'api':'detail','parameters':{'section':s(True,40),'record_id':s()}},
     'memory_search': {'api':'memory_search','parameters':{'query':s(True,300)}},
@@ -25,6 +26,7 @@ queries = {
 queries['model_providers']={'api':'model_providers'}
 queries['settings_toml']={'api':'settings_toml','parameters':{'module':s(False,40)}}
 actions = {
+    'share_video': {'api':'share_video','parameters':{'video':s(True,300)}},
     'control': {'api':'control','parameters':{'action':s(True,40)}},
     'enqueue': {'api':'enqueue','parameters':{'kind':s(True,40),'data':s(False,12000)}},
     'task_action': {'api':'task_action','parameters':{'task_id':s(),'action':s(True,30)}},

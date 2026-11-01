@@ -32,6 +32,17 @@ def parse_video(value):
     return match.group(1), page
 
 
+def search_duration(value):
+    if type(value) in (int, float):
+        return max(0, int(value))
+    if isinstance(value, str) and re.fullmatch(r'\d{1,4}(?::\d{1,2}){0,2}', value):
+        seconds = 0
+        for field in value.split(':'):
+            seconds = seconds * 60 + int(field)
+        return seconds
+    return 0
+
+
 class BilibiliAdapter(BiliClient):
     def __init__(self, data, store, config, day):
         super().__init__(data / "credential.json")
@@ -79,7 +90,8 @@ class BilibiliAdapter(BiliClient):
                 "title": str(info["title"])[:300], "author": str(owner.get("name", ""))[:100],
                 "up_uid": str(owner.get("mid", "")), "description": str(info.get("desc", ""))[:3000],
                 "duration": int(part.get("duration", info.get("duration", 0))),
-                "part_title": str(part.get("part", ""))[:300], "url": f"https://www.bilibili.com/video/{bvid}?p={page}"}
+                "part_title": str(part.get("part", ""))[:300], "cover_url": str(info.get("pic", ""))[:2000],
+                "url": f"https://www.bilibili.com/video/{bvid}?p={page}"}
 
     async def discover(self, query, uploader="", recommended=False):
         self.check()
@@ -93,6 +105,7 @@ class BilibiliAdapter(BiliClient):
             rows = payload.get("result", [])
         return [{"bvid": row["bvid"], "title": html.unescape(re.sub(r"<[^>]+>", "", str(row.get("title", ""))))[:300],
                  "author": str(row.get("author", ""))[:100], "up_uid": str(row.get("mid", "")),
+                 "duration": search_duration(row.get('duration', row.get('length', 0))),
                  "description": str(row.get("description", ""))[:500]} for row in rows[:10] if isinstance(row, dict) and re.fullmatch(r"BV[0-9A-Za-z]{10}", str(row.get("bvid", "")))]
 
     async def subtitles(self, metadata):

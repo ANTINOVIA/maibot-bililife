@@ -1,5 +1,7 @@
 # MaiBot BiliLife · 麦麦的 B 站生活
 
+已理解并保存的视频可通过主聊天工具或 WebUI 分享至指定会话，支持 QQ 官方 Ark 大图卡片；默认关闭，保留回执与持久去重。配置和平台限制见 [视频分享说明](docs/VIDEO-SHARING.md)。
+
 [![Version](https://img.shields.io/badge/version-0.2.6-5865F2)](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -66,6 +68,8 @@ flowchart LR
 视频理解的每条 `details` 可在 `evidence_id` 指定一个已提供的来源：字幕的 `source_id`（例如 `subtitle_3`）、元数据的 `metadata:title` / `metadata:description`，或一个完整媒体标签（例如 `frame_1@20.0s`、`video_segment_1@0-90s`、`audio_segment_1@0-90s`，位置以实际资料为准）。此时 `evidence_quote` 可为空，由后端填入该来源前 180 字以内的原文；也可直接逐字填写引用。两个字段同时填写时，引用必须属于指定来源。后端仅兼容空白差异及时间相邻字幕的断句，并保存匹配到的原文，不接受改写或拼接远距离抽样。观察描述写入 `details[].text`，不能用自行概括、OCR 或听写替代已取得的原文。校验失败后携带上次结果和错误条目修复一次，两次均失败则任务报错，不生成发布草稿；脱敏日志记录失败引用和来源编号。来源编号用于定位资料，并不代表对模型观点的事实认证。
 
 ## 配置文件与保存规则
+
+模块表单保存成功后，总览和设置总览中已显示的模块卡片会同步更新摘要与开关，无需刷新页面。弹窗仍保留，可继续编辑；校验失败时保留待修改内容，卡片继续显示上一次成功保存的配置。
 
 “重新排队”只恢复任务执行状态，不扣除或重置额度。同一天、同一视频分 P 的重试共用一次视频条数和浏览时长额度，记录持久保存，重启后继续生效；跨日再次执行按实际执行日结算。重试实际产生的模型调用、Token 和下载流量仍照常计入资源消耗。重新排队不会返还已发生的消耗，也不会解除评论发布限制或重发结果未知的操作。
 
@@ -884,3 +888,6 @@ data_dir/
 ## 许可证
 
 本项目使用 [MIT License](LICENSE)。随包引用的第三方代码许可见 [vendor/LICENSE](vendor/LICENSE)。
+## 主聊天指令浏览
+
+通过 `bililife_browse` 由主聊天模型理解自然语言后发起真实任务，支持按兴趣刷一条、关键词搜索、指定 BV/视频链接；`bililife_task_status` 查询本会话任务与分享回执。详见 [主聊天浏览流程](docs/CHAT-BROWSING.md)。这不是固定口令匹配；工具排队不表示已看完。
