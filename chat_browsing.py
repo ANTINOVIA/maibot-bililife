@@ -92,6 +92,9 @@ class ChatBrowsing:
             usage = {r['resource']: r['used'] for r in db.execute('SELECT resource,used FROM budget WHERE day=?', (self.engine.day(),))}
             if usage.get('model_calls', 0) >= cfg.max_model_calls or usage.get('tokens', 0) >= cfg.max_tokens:
                 raise ValueError('当日模型预算不足，未创建任务')
+            slot_conflicts = getattr(self.store, 'slot_conflicts', None)
+            if slot_conflicts and slot_conflicts(db, self.engine.day(), now, deadline):
+                raise ValueError('当前时段已有其他活动；未绕过宿主日程检查创建任务')
             db.execute("INSERT INTO tasks(id,day,type,state,payload,earliest,deadline,next_run,duration,dependencies,created,updated) VALUES(?,?,?,'queued',?,?,?,?,?,'[]',?,?)",
                        (task_id, self.engine.day(), kind, dump(payload), now, deadline, now, cfg.task_timeout_seconds, now, now))
             db.execute("INSERT INTO chat_requests(id,stream_id,mode,query,share_after,root_task_id,state,created,updated,deadline) VALUES(?,?,?,?,?,?,'queued',?,?,?)",
@@ -129,6 +132,10 @@ class ChatBrowsing:
         await self.store.call('execute', "UPDATE chat_requests SET notification_state='unknown' WHERE notification_state='sending'")
         await self.store.call('execute', "UPDATE chat_requests SET state='completed', result=json_set(result,'$.sharing',json(?)) WHERE state='sharing'",
                               (dump({'state': 'unknown', 'sent': False, 'notice': '分享阶段进程中断，请核对，禁止自动重发'}),))
+        await self.store.call('execute', """UPDATE tasks SET deadline=MIN(deadline,
+            (SELECT updated FROM chat_requests r WHERE r.id=json_extract(tasks.payload,'$.request_id')))
+            WHERE json_extract(payload,'$.request_id') IN (SELECT id FROM chat_requests WHERE state IN ('completed','failed'))
+            AND state NOT IN ('running','queued','retry')""")
 
     async def tick(self):
         if self.engine.paused or self.engine.stopping:
@@ -194,8 +201,20 @@ class ChatBrowsing:
         await self.finish(row, 'completed', result)
 
     async def finish(self, row, state, result, error=''):
-        await self.store.call('execute', 'UPDATE chat_requests SET state=?,result=?,error=?,updated=? WHERE id=?',
-                              (state, dump(result), error, time.time(), row['id']))
+        await asyncio.to_thread(self._finish, row['id'], state, result, error)
+
+    def _finish(self, request_id, state, result, error):
+        now = time.time()
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('UPDATE chat_requests SET state=?,result=?,error=?,updated=? WHERE id=?',
+                       (state, dump(result), error, now, request_id))
+            if state == 'failed':
+                db.execute("UPDATE tasks SET state='cancelled',cancel_requested=1,updated=? WHERE json_extract(payload,'$.request_id')=? AND state IN ('queued','retry','paused')", (now, request_id))
+            if state in ('completed', 'failed'):
+                # A manual request reserves its actual execution, rather than
+                # blocking another request until the original 30-minute cap.
+                db.execute("UPDATE tasks SET deadline=MIN(deadline,?) WHERE json_extract(payload,'$.request_id')=? AND state NOT IN ('running','queued','retry')", (now, request_id))
 
     async def notify(self, row):
         changed = await self.store.call('execute', "UPDATE chat_requests SET notification_state='sending' WHERE id=? AND notification_state='pending'", (row['id'],))

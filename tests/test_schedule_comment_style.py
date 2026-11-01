@@ -39,13 +39,13 @@ async def test_generated_plan_windows_and_saved_payload_agree(engine, monkeypatc
     await engine.platform.close()
 
 
-async def test_fallback_and_default_manual_window_are_short(engine, monkeypatch):
+async def test_failure_and_default_manual_window_are_short(engine, monkeypatch):
     now = fixed_morning(engine, monkeypatch)
     async def invalid(*args): raise ValueError('模型日程无效')
     engine.host.generate = invalid
-    assert (await engine.planner.create())['degraded']
-    first = engine.store.rows('SELECT * FROM tasks')[0]
-    assert first['deadline'] - first['earliest'] == 3600
+    with pytest.raises(ValueError):
+        await engine.planner.create()
+    assert not engine.store.rows('SELECT * FROM tasks')
     tomorrow = (now + timedelta(days=1)).date().isoformat()
     result = await WebUIService(engine).schedule_change('insert', json.dumps({
         'kind':'rest','date':tomorrow,'start':'11:00','reason':'稍作休息'}))

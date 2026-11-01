@@ -44,9 +44,10 @@ async def test_rest_blocks_new_browsing_and_publishing_and_survives_restart(engi
     seed_video(engine)
     engine.settings=Settings(active_start='00:00',active_end='23:59',auto_publish_comments=True)
     engine.store.set('settings',engine.settings.model_dump())
-    rest=engine.store.add_task('rest',{},engine.day(),now.timestamp()-1,now.timestamp()+3600)
-    engine.store.execute("UPDATE tasks SET state='succeeded' WHERE id=?",(rest,))
     watch=engine.store.add_task('watch',{'query':'BV1xx411c7mD'},engine.day(),now.timestamp()-2,now.timestamp()+7200)
+    # Simulate an older database containing a pre-existing conflicting rest.
+    rest=engine.store.add_task('rest',{},engine.day(),now.timestamp()+7200,now.timestamp()+10800)
+    engine.store.execute("UPDATE tasks SET state='succeeded',earliest=?,deadline=? WHERE id=?",(now.timestamp()-1,now.timestamp()+3600,rest))
     async def forbidden(*args,**kwargs):raise AssertionError('休息中不得开始外部动作')
     engine.platform.metadata=forbidden
     assert engine.rest_until()==now.timestamp()+3600

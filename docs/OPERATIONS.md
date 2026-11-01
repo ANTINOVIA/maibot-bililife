@@ -17,7 +17,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `antinova.maibot-bililife-0.2.6.zip`，核对同名 SHA256 文件。
+1. 从 [Releases](https://github.com/ANTINOVIA/maibot-bililife/releases/tag/v0.2.6) 下载 `antinova.maibot-bililife-0.2.6-schedule-fix.zip`，用 `antinova.maibot-bililife-0.2.6-schedule-fix.zip.sha256` 核对。此修复包需手动导入；官方插件中心、不可变的 `v0.2.6` 标签和标准 ZIP 仍为原始 0.2.6，不包含日程修复。
 2. 在 MaiBot 插件管理界面导入安装包并启用，打开插件设置总览，独立扫码登录 B 站。
 3. 在模型页选择宿主已有模型，或配置独立提供商。模型输入能力须与理解方式匹配；没有可用 ASR 时关闭 ASR。
 4. 配置主题、日程与每日额度。评论和回复自动发布默认关闭，需要时分别开启。

@@ -13,8 +13,8 @@ TaskType = Literal["discover", "watch", "explore", "read_comments", "draft", "re
 
 class ProposedTask(Strict):
     type: Literal["discover", "explore", "read_comments", "draft", "replies", "memory", "review", "rest"]
-    earliest_start: str
-    deadline: str
+    earliest_start: str = ""
+    deadline: str = ""
     goal: str = Field(min_length=1, max_length=200)
     query: str = Field(default="", max_length=80)
     max_items: int = Field(default=1, ge=1, le=4)
@@ -24,6 +24,10 @@ class ProposedTask(Strict):
 
     @model_validator(mode="after")
     def times(self):
+        if not self.earliest_start and not self.deadline:
+            return self
+        if not self.earliest_start or not self.deadline:
+            raise ValueError("时间偏好须同时提供开始和截止")
         start, end = datetime.fromisoformat(self.earliest_start), datetime.fromisoformat(self.deadline)
         if start.tzinfo is None or end.tzinfo is None or end <= start:
             raise ValueError("任务时间须含时区且截止晚于开始")

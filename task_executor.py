@@ -110,7 +110,7 @@ class TaskExecutor:
 
     def rest_until(self):
         now=time.time()
-        rows=self.store.rows("SELECT MAX(t.deadline) AS until FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id WHERE t.type='rest' AND d.task_id IS NULL AND t.state NOT IN ('cancelled','skipped','expired','failed') AND t.earliest<=? AND t.deadline>?",(now,now))
+        rows=self.store.rows("SELECT MAX(t.deadline) AS until FROM tasks t LEFT JOIN task_tombstones d ON d.task_id=t.id LEFT JOIN plans p ON p.id=t.plan_id WHERE NOT (COALESCE(json_extract(p.payload,'$.degraded'),0)=1 AND COALESCE(json_extract(p.payload,'$.theme'),'') LIKE '保守休息：待模型/计划恢复%') AND t.type='rest' AND d.task_id IS NULL AND t.state NOT IN ('cancelled','skipped','expired','failed') AND t.earliest<=? AND t.deadline>?",(now,now))
         return rows[0]['until'] or 0
 
     def activity_allowed(self):
@@ -168,6 +168,7 @@ class TaskExecutor:
         await self.store.call("recover")
         await self.sharing.recover()
         await self.chat_browsing.recover()
+        await self.store.call("cleanup_legacy_plans")
         await self.platform.load()
         self.health = {"ffmpeg": bool(shutil.which("ffmpeg")), "concurrency": 1, "host_long_term_memory": "unsupported",
                        "memory_method": "插件 SQLite 检索工具 + maisaka.context.append", "asr_enabled": self.settings.enable_asr}
@@ -195,6 +196,8 @@ class TaskExecutor:
         allowed = {"discover", "watch", "explore", "read_comments", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "adapt", "model_test"}
         if kind not in allowed:
             raise ValueError("未知任务类型")
+        if '_slot_owner' in payload and not child:
+            raise ValueError('内部活动归属不可由外部指定')
         if len(dump(payload)) > 12000:
             raise ValueError("任务参数过大")
         if kind in ("discover", "explore", "read_comments"):
@@ -209,7 +212,13 @@ class TaskExecutor:
             parse_video(payload.get("query", payload.get("video", "")))
         scheduled_start = earliest if earliest is not None else time.time()
         scheduled_end = deadline if deadline is not None else min(scheduled_start + self.settings.schedule_window_seconds(kind), self.day_end())
-        return await self.store.call("add_task", kind, payload, self.day(), scheduled_start, scheduled_end,
+        if child and self.current:
+            parent_payload = json.loads(self.current['payload'])
+            payload = {**payload, '_slot_owner': parent_payload.get('_slot_owner', self.current['id'])}
+            scheduled_end = min(scheduled_end, self.current['deadline'])
+            if scheduled_start >= scheduled_end:
+                raise ValueError('父活动时段已结束')
+        return await self.store.call("add_task", kind, payload, datetime.fromtimestamp(scheduled_start, ZoneInfo(self.settings.timezone)).date().isoformat(), scheduled_start, scheduled_end,
                                      duration or self.settings.task_timeout_seconds,
                                      plan_id=self.current["plan_id"] if child and self.current else None,
                                      dependencies=dependencies or ([self.current["id"]] if child and self.current else []))
@@ -223,7 +232,12 @@ class TaskExecutor:
             if self.settings.planner_enabled and now.strftime("%H:%M") >= self.settings.plan_time:
                 plans = await self.store.call("rows", "SELECT id FROM plans WHERE day=? AND active=1", (self.day(),))
                 pending = await self.store.call("rows", "SELECT id FROM tasks WHERE type='plan' AND day=? AND state IN ('queued','retry','running')", (self.day(),))
-                if not plans and not pending:
+                retry = await self.store.call('get', 'plan_retry', {})
+                if retry.get('day') != self.day():
+                    retry = {}
+                if not plans and not pending and time.time() >= retry.get('next', 0) and retry.get('attempts', 0) < 6:
+                    attempts = retry.get('attempts', 0) + 1
+                    await self.store.call('set', 'plan_retry', {'day': self.day(), 'attempts': attempts, 'next': time.time() + min(1800, 60 * 2**(attempts-1))})
                     await self.enqueue("plan", {})
             if self.settings.review_enabled and now.strftime("%H:%M") >= self.settings.review_time:
                 reviews = await self.store.call("rows", "SELECT created FROM summaries WHERE day=?", (self.day(),))
@@ -232,10 +246,16 @@ class TaskExecutor:
                 review_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
                 attempts = await self.store.call("rows", "SELECT id FROM tasks WHERE type='review' AND day=? AND created>=?", (self.day(), review_at))
                 if (not reviews or reviews[0]["created"] < review_at) and not tasks and not attempts:
-                    await self.enqueue("review", {})
+                    try:
+                        await self.enqueue("review", {})
+                    except ValueError:
+                        pass
             next_reply = await self.store.call("get", "next_reply", 0)
             if self.settings.replies_enabled and self.activity_allowed() and not self.blocked and self.account_status["state"] == "authenticated" and time.time() >= next_reply:
-                await self.enqueue("replies", {})
+                try:
+                    await self.enqueue("replies", {})
+                except ValueError:
+                    pass  # Existing activity owns this slot; check again next interval.
                 await self.store.call("set", "next_reply", time.time() + self.settings.reply_interval_seconds)
         if time.time() >= await self.store.call("get", "next_cleanup", 0):
             await self.store.call("prune", self.settings.retention_days, self.runtime, self.settings.cache_hours)
@@ -282,7 +302,7 @@ class TaskExecutor:
         except RestPeriod as exc:
             await self.store.call('finish',task,'retry',error=str(exc),next_run=exc.until)
         except BudgetExceeded as exc:
-            await self.store.call("finish", task, "budget_exhausted", error=str(exc))
+            await self.store.call("finish", task, "budget_exhausted", error=redact(str(exc))[:300])
         except (LoginRequired, PlatformError) as exc:
             restricted = isinstance(exc, LoginRequired) or exc.code in (-101, -111, -352, -412, 401, 403, 412, 429)
             if restricted:
@@ -295,7 +315,7 @@ class TaskExecutor:
         except DiagnosticError as exc:
             await self.store.call("finish", task, "failed", error=exc.code+'：'+str(exc))
         except ModelUnavailable as exc:
-            await self.store.call("finish", task, "blocked_model", error=str(exc))
+            await self.store.call("finish", task, "blocked_model", error=redact(str(exc))[:300])
         except (VideoReadError, httpx.TransportError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
             retryable = not isinstance(exc, VideoReadError) or exc.retryable
             state = "retry" if retryable and task["type"] != "publish" and task["attempts"] <= self.settings.max_retries else "timeout" if isinstance(exc, asyncio.TimeoutError) else "failed"
@@ -423,8 +443,8 @@ class TaskExecutor:
                 except PolicyBlocked:
                     skipped.append({"bvid": item["bvid"], "reason": "超出范围"})
                     continue
-                start = time.time() + len(chosen) * (self.settings.schedule_task_minutes + self.settings.schedule_gap_minutes) * 60
-                deadline = self.life_deadline(start)
+                start = time.time()
+                deadline = min(self.life_deadline(start), self.current["deadline"])
                 if deadline-start < 30:
                     skipped.append({"bvid": item["bvid"], "reason": "今天剩余活跃时段不足以安排短时观看"})
                     continue

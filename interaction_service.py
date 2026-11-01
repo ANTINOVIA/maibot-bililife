@@ -93,7 +93,11 @@ class InteractionService:
             old=await self.store.call("rows","SELECT id FROM tasks WHERE type='publish' AND json_extract(payload,'$.draft_id')=?",(row['id'],))
             if old:
                 continue
-            queued.append(await self.engine.enqueue('publish',{'draft_id':row['id'],'manual':False},deadline=self.engine.life_deadline()))
+            try:
+                queued.append(await self.engine.enqueue('publish',{'draft_id':row['id'],'manual':False},deadline=self.engine.life_deadline()))
+            except ValueError:
+                # An existing activity owns the interval. Keep the draft for a later check.
+                continue
         return queued
 
     async def publish(self, draft_id, manual=False):

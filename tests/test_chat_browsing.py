@@ -221,3 +221,13 @@ async def test_failed_local_memory_does_not_erase_successful_content_understandi
     assert status['result']['sharing']['sent'] is False
     engine.ctx.send.custom.assert_not_awaited()
     await engine.platform.close()
+
+
+async def test_manual_requests_respect_storage_slot_policy_when_available(engine):
+    setup(engine)
+    engine.store.slot_conflicts = lambda db, day, start, end: True
+    with pytest.raises(ValueError, match='已有其他活动'):
+        await engine.chat_browsing.start('owner')
+    assert not engine.store.rows('SELECT * FROM chat_requests')
+    assert not engine.store.rows('SELECT * FROM tasks')
+    await engine.platform.close()

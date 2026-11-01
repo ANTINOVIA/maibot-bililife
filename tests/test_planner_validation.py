@@ -15,7 +15,7 @@ async def test_plan_success_clears_old_error_and_same_day_reuses_plan(engine):
     engine.store.set('plan_error','previous failure')
     first=await engine.planner.create()
     second=await engine.planner.create()
-    assert first['degraded'] is False and second['existing'] is True
+    assert 'degraded' not in first and second['existing'] is True
     assert first['plan_id']==second['plan_id']
     assert engine.store.get('plan_error')==''
     await engine.platform.close()
@@ -31,11 +31,11 @@ async def test_planner_uses_summary_conclusions_without_nested_execution_log(eng
         assert data['summaries'][0]['unresolved']==['问题来源待核对']
         return PlanProposal(theme='休息',tasks=[{'type':'rest','earliest_start':now.isoformat(),'deadline':(now+timedelta(seconds=60)).isoformat(),'goal':'休息','reason':'资料不足'}])
     engine.host.generate=generate
-    assert (await engine.planner.create())['degraded'] is False
+    assert (await engine.planner.create())['plan_id']
     await engine.platform.close()
 
 
-async def test_invalid_query_degrades_instead_of_executing(engine):
+async def test_invalid_query_fails_without_creating_plan(engine):
     now=engine.now()
     engine.active=lambda *args:True
     proposal=PlanProposal(theme='无授权主题',tasks=[{'type':'discover','earliest_start':now.isoformat(),
@@ -43,7 +43,8 @@ async def test_invalid_query_degrades_instead_of_executing(engine):
     async def generate(*args):
         return proposal
     engine.host.generate=generate
-    result=await engine.planner.create()
-    assert result['degraded'] is True
-    assert engine.store.rows('SELECT type FROM tasks')==[{'type':'rest'}]
+    with pytest.raises(ValueError, match='计划'):
+        await engine.planner.create()
+    assert not engine.store.rows('SELECT * FROM tasks')
+    assert not engine.store.rows('SELECT * FROM plans')
     await engine.platform.close()
