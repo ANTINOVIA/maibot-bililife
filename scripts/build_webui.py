@@ -17,6 +17,7 @@ def s(required=True, max_length=200):
     return {'type':'string','required':required,'max_length':max_length}
 
 queries = {
+    'sharing_candidates': {'api':'sharing_candidates'},
     'snapshot': {'api':'snapshot','parameters':{'section':s(False,40),'page':{'type':'integer','minimum':1,'maximum':1000}}},
     'detail': {'api':'detail','parameters':{'section':s(True,40),'record_id':s()}},
     'memory_search': {'api':'memory_search','parameters':{'query':s(True,300)}},

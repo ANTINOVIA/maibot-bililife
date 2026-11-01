@@ -17,7 +17,7 @@ video_share_cooldown_seconds = 10800
 
 目标会话需已在宿主加载，QQ 大图卡片要求目标平台为 QQ。`text` 是显式选择的文字模式，不是卡片失败后的自动回退。活跃时间和休息仍遵循现有设置；每日上限包含结果未知的尝试。
 
-QQ 适配器需支持 SDK 的 `send.custom("qq_ark", payload, stream_id, return_details=True)`。仅支持文本/图片的旧适配器会拒绝此类型；需先确认适配器实现、卡片权限和 URL 配置。无需更改 MaiBot 主程序或本插件的 SDK 版本要求。
+QQ 适配器需支持 [Mai-with-u/MaiBot-QQ-Adapter PR #9](https://github.com/Mai-with-u/MaiBot-QQ-Adapter/pull/9) 提供的 Ark 出站能力，即 SDK 的 `send.custom("qq_ark", payload, stream_id, return_details=True)`。仅支持文本/图片的旧适配器会拒绝此类型；需先确认适配器实现、卡片权限和 URL 配置。无需更改 MaiBot 主程序或本插件的 SDK 版本要求。
 
 ## 使用
 

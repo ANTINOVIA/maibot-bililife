@@ -102,6 +102,19 @@ async def test_legacy_cover_refresh_and_disabled_during_await(engine):
     await engine.platform.close()
 
 
+async def test_legacy_share_duplicate_needs_no_metadata_or_host_lookups(engine):
+    setup(engine)
+    video_id, _ = seed(engine, cover=False)
+    engine.platform.metadata = AsyncMock(return_value={"cover_url": "https://i0.hdslb.com/cover.jpg"})
+    assert (await engine.sharing.share(video_id))["sent"]
+    engine.platform.metadata.side_effect = RuntimeError("offline")
+    engine.ctx.chat.get_all_streams.side_effect = RuntimeError("offline")
+    assert (await VideoSharing(engine).share(video_id))["duplicate"]
+    engine.platform.metadata.assert_awaited_once()
+    engine.ctx.send.custom.assert_awaited_once()
+    await engine.platform.close()
+
+
 async def test_interrupted_attempt_recovers_as_unknown(engine):
     setup(engine)
     video_id, _ = seed(engine)

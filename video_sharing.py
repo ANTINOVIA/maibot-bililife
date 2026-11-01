@@ -83,6 +83,9 @@ class VideoSharing:
                 AND EXISTS(SELECT 1 FROM memories m WHERE m.video_id=v.id AND m.status='active')""", (video_id,))
             if not rows:
                 raise ValueError("只能分享已理解且保留真实记忆的视频")
+            prior = await self.store.call("rows", "SELECT state,message_id FROM video_shares WHERE video_id=? AND stream_id=?", (video_id, cfg.video_share_stream_id))
+            if prior:
+                return {"state": prior[0]["state"], "sent": prior[0]["state"] == "sent", "duplicate": True, "message_id": prior[0]["message_id"]}
             streams = await asyncio.wait_for(self.engine.ctx.chat.get_all_streams(platform="all_platforms"), 10)
             streams = streams.get("streams") if isinstance(streams, dict) else streams
             target = next((row for row in streams or [] if isinstance(row, dict) and
