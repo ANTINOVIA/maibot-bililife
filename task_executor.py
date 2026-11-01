@@ -88,6 +88,8 @@ class TaskExecutor:
         self.planner = DailyPlanner(self)
         self.comment_reading = CommentReading(self)
         self.sharing = VideoSharing(self)
+        from .chat_browsing import ChatBrowsing
+        self.chat_browsing = ChatBrowsing(self)
 
     def config(self):
         return self.settings
@@ -119,6 +121,12 @@ class TaskExecutor:
             raise PolicyBlocked("检索词为空、过长或命中排除主题")
         if not any(x in query for x in self.settings.allowed_topics):
             raise PolicyBlocked("检索词须包含一个允许主题")
+
+    def validate_chat_query(self, query):
+        # Natural-language search terms need not literally contain a configured
+        # category (e.g. 机器人属于技术). Candidate selection still checks scope.
+        if not query or len(query) > 80 or any(x in query for x in self.settings.excluded_topics):
+            raise PolicyBlocked("检索词为空、过长或命中排除主题")
 
     def validate_scope(self, metadata, topic=""):
         cfg = self.settings
@@ -159,6 +167,7 @@ class TaskExecutor:
         await self.store.call("lock")
         await self.store.call("recover")
         await self.sharing.recover()
+        await self.chat_browsing.recover()
         await self.platform.load()
         self.health = {"ffmpeg": bool(shutil.which("ffmpeg")), "concurrency": 1, "host_long_term_memory": "unsupported",
                        "memory_method": "插件 SQLite 检索工具 + maisaka.context.append", "asr_enabled": self.settings.enable_asr}
@@ -177,6 +186,11 @@ class TaskExecutor:
         await self.store.call("unlock")
 
     async def enqueue(self, kind, payload, duration=None, earliest=None, deadline=None, dependencies=None, child=False):
+        if child and self.current:
+            parent = json.loads(self.current['payload'])
+            if parent.get('origin') == 'chat_command':
+                payload = {**payload, **{key: parent[key] for key in ('origin', 'request_id', 'stream_id')}}
+                deadline = min(deadline or self.current['deadline'], self.current['deadline'])
         # 入队的数据只来自受控 API 或程序，不接受任意脚本、URL 请求或 shell。
         allowed = {"discover", "watch", "explore", "read_comments", "draft", "replies", "memory", "review", "rest", "account", "login", "publish", "reconcile", "plan", "adapt", "model_test"}
         if kind not in allowed:
@@ -185,7 +199,10 @@ class TaskExecutor:
             raise ValueError("任务参数过大")
         if kind in ("discover", "explore", "read_comments"):
             if payload.get("query") and not payload.get("uploader") and not payload.get("recommended"):
-                self.validate_query(payload.get("query", ""))
+                if payload.get('origin') == 'chat_command':
+                    self.validate_chat_query(payload.get('query', ''))
+                else:
+                    self.validate_query(payload.get("query", ""))
             elif payload.get("uploader") and payload["uploader"] not in self.settings.allowed_uploaders:
                 raise PolicyBlocked("UP 主必须先加入允许范围")
         if kind == "watch":
@@ -198,6 +215,7 @@ class TaskExecutor:
                                      dependencies=dependencies or ([self.current["id"]] if child and self.current else []))
 
     async def schedule(self):
+        await self.chat_browsing.tick()
         now = self.now()
         if not self.paused:
             if self.activity_allowed() and not self.blocked and not self.posting_stopped and self.account_status["state"]=="authenticated":
@@ -381,6 +399,13 @@ class TaskExecutor:
         chosen, skipped = [], []
         for item in rows[:min(8, self.settings.max_videos * 2)]:
             self.check()
+            if payload.get('origin') == 'chat_command':
+                duration = item.get('duration', 0)
+                if not duration:
+                    duration = (await self.platform.metadata(item['bvid']))['duration']
+                if duration > self.settings.max_video_seconds:
+                    skipped.append({'bvid': item['bvid'], 'reason': '超过允许时长，继续挑选其他候选'})
+                    continue
             old = await self.store.call("rows", "SELECT id FROM videos WHERE bvid=?", (item["bvid"],))
             if old:
                 skipped.append({"bvid": item["bvid"], "reason": "重复内容"})
@@ -390,6 +415,7 @@ class TaskExecutor:
                 skipped.append({"bvid":item["bvid"],"reason":"已在观看队列"})
                 continue
             decision = await self.host.generate("select", {"candidate": item, "interests": await self.store.call("rows", "SELECT * FROM interests"),
+                                                           "requested_query": payload.get('query', '') if payload.get('origin') == 'chat_command' else '',
                                                            "allowed_topics": self.settings.allowed_topics, "excluded_topics": self.settings.excluded_topics}, Selection)
             if decision.browse:
                 try:
@@ -402,7 +428,8 @@ class TaskExecutor:
                 if deadline-start < 30:
                     skipped.append({"bvid": item["bvid"], "reason": "今天剩余活跃时段不足以安排短时观看"})
                     continue
-                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic}, earliest=start, deadline=deadline, child=True)
+                task_id = await self.enqueue("watch", {"query": item["bvid"], "topic": decision.topic,
+                    **({'requested_query': payload.get('query', '')} if payload.get('origin') == 'chat_command' else {})}, earliest=start, deadline=deadline, child=True)
                 chosen.append({"bvid": item["bvid"], "task_id": task_id, "reason": decision.reason})
                 if len(chosen) >= min(payload.get("max_items", 1), self.settings.max_videos):
                     break
@@ -424,7 +451,12 @@ class TaskExecutor:
         if existing and existing[0]["state"] == "understood":
             return {"video_id": video_id, "duplicate": True}
         selection = await self.host.generate("select", {"candidate": metadata, "interests": await self.store.call("rows", "SELECT * FROM interests"),
+                                                       "requested_query": payload.get('requested_query', ''),
                                                        "allowed_topics": self.settings.allowed_topics, "excluded_topics": self.settings.excluded_topics}, Selection)
+        if payload.get('origin') == 'chat_command' and not payload.get('requested_query'):
+            # Explicit user selection overrides interest ranking, never scope
+            # checks, duration/download limits or content evidence requirements.
+            selection.browse = True
         reason = selection.reason
         try:
             self.validate_scope(metadata, selection.topic)
@@ -442,11 +474,11 @@ class TaskExecutor:
         analysis["topic"] = selection.topic
         await self.store.call("execute", "UPDATE videos SET evidence=?,analysis=?,state='understood' WHERE id=?", (dump(evidence), dump(analysis), video_id))
         self.check()
-        if self.settings.comments_enabled:
+        if self.settings.comments_enabled and payload.get('origin') != 'chat_command':
             await self.enqueue("draft", {"video_id": video_id}, child=True)
         if self.settings.memory_enabled:
             await self.enqueue("memory", {"video_id": video_id}, child=True)
-        if self.settings.adaptive_schedule_enabled:
+        if self.settings.adaptive_schedule_enabled and payload.get('origin') != 'chat_command':
             await self.enqueue("adapt", {"video_id": video_id}, deadline=self.life_deadline(), child=True)
         return {"video_id": video_id, "coverage": evidence["coverage"], "analysis": analysis}
 

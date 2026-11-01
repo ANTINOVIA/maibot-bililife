@@ -888,3 +888,6 @@ data_dir/
 ## 许可证
 
 本项目使用 [MIT License](LICENSE)。随包引用的第三方代码许可见 [vendor/LICENSE](vendor/LICENSE)。
+## 主聊天指令浏览
+
+通过 `bililife_browse` 由主聊天模型理解自然语言后发起真实任务，支持按兴趣刷一条、关键词搜索、指定 BV/视频链接；`bililife_task_status` 查询本会话任务与分享回执。详见 [主聊天浏览流程](docs/CHAT-BROWSING.md)。这不是固定口令匹配；工具排队不表示已看完。

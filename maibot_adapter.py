@@ -40,6 +40,10 @@ class MaiBotAdapter:
         if stage in ("comment", "reply", "decide"):
             system += "\n管理员的评论与回复风格要求：" + cfg.comment_prompt
             system += "\n正文避免使用的表达：" + dump(cfg.comment_avoid_phrases)
+        if stage == 'select' and external.get('requested_query'):
+            system += ('\n这是主聊天发起的选片任务。requested_query 是用户要求，经主聊天理解后给出。'
+                       '先判断候选是否满足这些具体要求，再考虑兴趣；不能只因大类主题相近就选中。'
+                       '候选资料无法支持关键条件时 browse=false，并说明缺少什么证据。不要把关键词本身当作满足条件的证据。')
         content = dump({"external_data": external})
         if len(content) > 35000:
             raise ValueError("模型输入超过分段预算")

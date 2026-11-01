@@ -31,6 +31,8 @@ WebUI“浏览与理解 → 视频经历 → 详情”可显式分享到指定�
 
 收到成功回执后记录 `sent` 和消息 ID。超时、异常或没有成功回执时记为 `unknown`；启动时将中断的 `sending` 转成 `unknown`。它不等于“未发送”，不会自动重发或降级成文字，也不代表用户已读；应先核对目标聊天再人工处理。
 
+新适配器可提供 `ark_delivery_status` 只读 API。存在与目标、卡片和本次时间匹配的明确 HTTP 拒绝时，记录 `failed` 及错误码，并保持去重；缺失或模糊回执仍记为 `unknown`。`40034126` 还应结合单聊被动回复凭证做受控核查，不能仅凭这一错误断言所有卡片发送方式均无权。
+
 使用腾讯 [Ark 37 大图模板](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/type/template/template_37.md)，提供标题、UP 主、封面和跳转链接。它不是 B站原生分享协议，不保证 QQ 内直接播放；消息权限与主动发送限制仍由平台控制。
 
 ## 验证

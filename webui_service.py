@@ -216,6 +216,10 @@ class WebUIService:
 
     async def enqueue(self, kind, data):
         payload = json.loads(data)
+        if kind == 'chat_browse':
+            if not isinstance(payload, dict) or set(payload) - {'stream_id', 'mode', 'query', 'share_after'}:
+                raise ValueError('聊天浏览参数无效')
+            return await self.engine.chat_browsing.start(**payload)
         payload=self.validate_task_payload(kind,payload)
         if kind == "login":
             rows = await self.store.call("rows", "SELECT id FROM tasks WHERE type='login' AND state IN ('queued','running','retry')")

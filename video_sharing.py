@@ -31,6 +31,12 @@ class VideoSharing:
     async def recover(self):
         await self.store.call("execute", "UPDATE video_shares SET state='unknown',updated=? WHERE state='sending'", (time.time(),))
 
+    async def prior_result(self, record):
+        extra = await self.store.call('get', 'video_share_receipt:' + record['id'], {})
+        return {**extra, 'state': record['state'], 'sent': record['state'] == 'sent',
+                'duplicate': True, 'message_id': record.get('message_id'),
+                'notice': '已存在发送记录，不自动重复发送；failed 表示明确拒绝，unknown 须核对'}
+
     def check(self, caller_stream_id=None):
         engine, cfg = self.engine, self.engine.config()
         if not cfg.video_share_enabled or not cfg.memory_enabled or engine.paused or engine.stopping:
@@ -83,9 +89,9 @@ class VideoSharing:
                 AND EXISTS(SELECT 1 FROM memories m WHERE m.video_id=v.id AND m.status='active')""", (video_id,))
             if not rows:
                 raise ValueError("只能分享已理解且保留真实记忆的视频")
-            prior = await self.store.call("rows", "SELECT state,message_id FROM video_shares WHERE video_id=? AND stream_id=?", (video_id, cfg.video_share_stream_id))
+            prior = await self.store.call("rows", "SELECT id,state,message_id FROM video_shares WHERE video_id=? AND stream_id=?", (video_id, cfg.video_share_stream_id))
             if prior:
-                return {"state": prior[0]["state"], "sent": prior[0]["state"] == "sent", "duplicate": True, "message_id": prior[0]["message_id"]}
+                return await self.prior_result(prior[0])
             streams = await asyncio.wait_for(self.engine.ctx.chat.get_all_streams(platform="all_platforms"), 10)
             streams = streams.get("streams") if isinstance(streams, dict) else streams
             target = next((row for row in streams or [] if isinstance(row, dict) and
@@ -107,9 +113,10 @@ class VideoSharing:
                 raise ValueError("视频记忆已遗忘，未发送")
             record, claimed = await asyncio.to_thread(self.claim, video_id, current)
             if not claimed:
-                return {"state": record["state"], "sent": record["state"] == "sent", "duplicate": True, "message_id": record.get("message_id")}
+                return await self.prior_result(record)
             text = f"[B站视频] {metadata['title']}\n{metadata['url']}"
-            state, message_id = "unknown", None
+            state, message_id, detail = "unknown", None, {}
+            attempted_at = time.time()
             try:
                 current = self.check(caller_stream_id)
                 if (current.video_share_stream_id, current.video_share_format) != (cfg.video_share_stream_id, cfg.video_share_format):
@@ -125,7 +132,24 @@ class VideoSharing:
                     state = "sent"
             except Exception:
                 pass  # The platform may have accepted it. Never retry or fall back automatically.
+            if state == 'unknown' and ark is not None and getattr(self.engine.ctx, 'api', None) is not None:
+                try:
+                    # Optional QQ-adapter API: Host send.custom on older hosts
+                    # drops the gateway rejection reason. Read a correlated
+                    # receipt without sending again; absence stays unknown.
+                    receipt = await asyncio.wait_for(self.engine.ctx.api.call('Mai-with-u.qq-adapter.ark_delivery_status',
+                        version='1', target_id=str(target.get('group_id') or target.get('user_id') or ''),
+                        is_group=bool(target.get('group_id')), ark=ark, after=attempted_at), 5)
+                    receipt = receipt.get('result', {}) if isinstance(receipt, dict) and receipt.get('success') is True else {}
+                    if receipt.get('state') == 'failed' and receipt.get('sent') is False:
+                        state = 'failed'
+                        detail = {key: receipt[key] for key in ('error', 'error_code', 'observed_at') if key in receipt}
+                except Exception:
+                    pass
             await self.store.call("execute", "UPDATE video_shares SET state=?,message_id=?,updated=? WHERE id=?", (state, message_id, time.time(), record["id"]))
             await self.store.call("audit", "video_share_result", {"share_id": record["id"], "video_id": video_id, "state": state})
-            return {"state": state, "sent": state == "sent", "message_id": message_id, "video_id": video_id,
-                "source": metadata["url"], "notice": "结果未知时先核对聊天，不自动重发或改发文本" if state == "unknown" else ""}
+            final = {**detail, "state": state, "sent": state == "sent", "message_id": message_id, "video_id": video_id,
+                "source": metadata["url"], "notice": "结果未知时先核对聊天，不自动重发或改发文本" if state == "unknown" else
+                'QQ 明确拒绝本次卡片；未自动重发或改发文本' if state == 'failed' else ''}
+            await self.store.call('set', 'video_share_receipt:' + record['id'], final)
+            return final

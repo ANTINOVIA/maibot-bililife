@@ -142,3 +142,21 @@ def test_card_rejects_untrusted_or_empty_cover():
     for cover in ["", "https://127.0.0.1/a", "https://example.com/a", "https://i0.hdslb.com:8080/a"]:
         with pytest.raises(ValueError):
             video_card({"url": "https://www.bilibili.com/video/BV1xx411c7mD", "title": "title", "cover_url": cover})
+
+
+async def test_explicit_qq_permission_rejection_is_persisted_not_unknown(engine):
+    setup(engine)
+    engine.ctx.chat.get_all_streams.return_value[0]['user_id'] = 'owner-id'
+    engine.ctx.send.custom.return_value = {'sent': False, 'success': False}
+    engine.ctx.api = SimpleNamespace(call=AsyncMock(return_value={'success': True, 'result': {
+        'state': 'failed', 'sent': False, 'error_code': 40034126, 'error': '无ark模板权限', 'observed_at': time.time()}}))
+    video_id, _ = seed(engine)
+    result = await engine.sharing.share(video_id, 'owner')
+    assert result['state'] == 'failed' and result['error_code'] == 40034126
+    assert '无ark模板权限' in result['error']
+    again = await VideoSharing(engine).share(video_id, 'owner')
+    assert again['state'] == 'failed' and again['error_code'] == 40034126 and again['duplicate']
+    engine.ctx.send.custom.assert_awaited_once()
+    engine.ctx.send.text.assert_not_awaited()
+    assert engine.ctx.api.call.call_args.kwargs['target_id'] == 'owner-id'
+    await engine.platform.close()
